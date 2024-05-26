@@ -15,29 +15,39 @@ from vgc.behaviour.BattlePolicies import RandomPlayer
 from vgc.util.generator.PkmTeamGenerators import RandomTeamGenerator
 
 
+from vgc.behaviour import BattlePolicy
+from vgc.datatypes.Constants import TYPE_CHART_MULTIPLIER
+from vgc.datatypes.Objects import GameState
+from vgc.datatypes.Types import PkmStat, PkmType
+
 
 
 class PkmBattleEnvWrapper(gym.Wrapper):
-
+    '''
+    '''
     def __init__(self, id: str):
-        team0, team1 = PkmTeam(), PkmTeam()
-        
+        '''
+        '''
+        self.num_resets = -1
+
+        self.player_index, self.opponent_index = self._get_player_opp_index()
+        self.opponent_agent = NiBot()
+
         # competition rules
         # need to test and disable the set team when set team shows it works
-        # self.team_generator = RandomTeamGenerator(2)
-        # self.env = self._get_random_team_env(self.team_generator)
+        self.team_generator = RandomTeamGenerator(2)
+        self.env = self._get_random_team_env(self.team_generator, self.player_index)
 
         # set team for testing
-        self.env = PkmBattleEnv((team0, team1),
-                   # encode Fasle for forward env
-                   #encode=(agent0.requires_encode(), agent1.requires_encode()))  # set new environment with teams
-                   encode=(True, True))
+        # if doing non random mode
+        # team0, team1 = PkmTeam(), PkmTeam()
+        # self.env = PkmBattleEnv((team0, team1),
+        #            # encode Fasle for forward env
+        #            #encode=(agent0.requires_encode(), agent1.requires_encode()))  # set new environment with teams
+        #            encode=(True, True))
+        # self.opponent_agent = RandomPlayer()
 
-        self.opponent_agent = RandomPlayer()
-
-        self.num_resets = -1
-        # to do: figure out reward or index
-        self.player_index, self.opponent_index = self._get_player_opp_index()
+        
         # if this is needed then do a reset call here. shouldn't be needed
         #self.current_obs_list = [np.zeros((self.env.observation_space.n,))]
         self.current_obs_list = []
@@ -60,8 +70,12 @@ class PkmBattleEnvWrapper(gym.Wrapper):
 
         # if opponent needs the non-bool obs can do this
         # may be an unnecessary step
-        opponent_obs = self._change_obs_bool_to_float(self.current_obs_list[self.opponent_index])
+        #opponent_obs = self._change_obs_bool_to_float(self.current_obs_list[self.opponent_index])
+        opponent_obs = self.current_obs_list[self.opponent_index]
         opponent_action = self.opponent_agent.get_action(opponent_obs)
+        if opponent_action >= self.action_space.n or opponent_action < 0:
+            print(f"Error: opponent action {opponent_action} | action space {self.action_space.n}")
+            opponent_action = 0
 
         if self.player_index == 0:
             action_list = [action, opponent_action]
@@ -82,13 +96,12 @@ class PkmBattleEnvWrapper(gym.Wrapper):
     def reset(self, seed=None, options=None):
         ''''''
         self.num_resets += 1
+        self.player_index, self.opponent_index = self._get_player_opp_index()
 
         # if doing random teams
-        #self.env = self._get_random_team_env(self.team_generator)
+        self.env = self._get_random_team_env(self.team_generator, self.player_index)
     
         self.current_obs_list, info = self.env.reset()
-    
-        self.player_index, self.opponent_index = self._get_player_opp_index()
 
         obs = self.current_obs_list[self.player_index]
         obs = self._change_obs_bool_to_float(obs)
@@ -110,11 +123,11 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         Used for accessing obs indices, reward indices,
         telling who winner is etc
         '''
-        # player_index = self.num_resets % 2
-        # opp_index = (player_index + 1) % 2
+        player_index = self.num_resets % 2
+        opp_index = (player_index + 1) % 2
         # for testing do 0 and 1
-        player_index = 0
-        opp_index = 1
+        # player_index = 0
+        # opp_index = 1
 
         return player_index, opp_index
         
@@ -154,12 +167,105 @@ class PkmBattleEnvWrapper(gym.Wrapper):
 
         return obs_dict
 
-    def _get_random_team_env(self, team_generator):
+    def _get_random_team_env(self, team_generator, player_index):
         '''
         '''
         team0 = team_generator.get_team().get_battle_team([0, 1, 2])
         team1 = team_generator.get_team().get_battle_team([0, 1, 2])
 
-        env = PkmBattleEnv((team0, team1), encode=(True, True))
+        if player_index == 0:
+            encode_state_tuple = (True, False)
+        else:
+            encode_state_tuple = (False, True)
+
+        env = PkmBattleEnv((team0, team1), encode=encode_state_tuple)
 
         return env
+
+
+
+# Nizar's Bot
+class NiBot(BattlePolicy):
+    '''
+    Bot from 2023 VGC AI competition
+    Not written by me. Copied from competition repo
+    https://gitlab.com/DracoStriker/pokemon-vgc-engine/-/blob/master/competition/vgc2023/NiBot_Submission%20-%20Nizar%20Haimoud/BattlePolicies.py
+    '''
+
+    def requires_encode(self) -> bool:
+        return False
+
+    def close(self):
+        pass
+
+    def get_action(self, g: GameState):
+        # Get weather condition
+        weather = g.weather.condition
+
+        # Get my Pokémon team
+        my_team = g.teams[0]
+        my_pkms = [my_team.active] + my_team.party
+
+        # Get opponent's team
+        opp_team = g.teams[1]
+        opp_active = opp_team.active
+        opp_active_type = opp_active.type
+        opp_defense_stage = opp_team.stage[PkmStat.DEFENSE]
+
+        # Initialize variables for the best move and its damage
+        best_move_id = -1
+        best_damage = -np.inf
+
+        # Iterate over all my Pokémon and their moves to find the most damaging move
+        for i, pkm in enumerate(my_pkms):
+            if i == 0:
+                my_attack_stage = my_team.stage[PkmStat.ATTACK]
+            else:
+                my_attack_stage = 0
+
+            for j, move in enumerate(pkm.moves):
+                if pkm.hp == 0.0:
+                    continue
+
+                # Estimate the damage of the move
+                damage = self.estimate_damage(move.type, pkm.type, move.power, opp_active_type, my_attack_stage,
+                                         opp_defense_stage, weather)
+
+                # Check if the current move has higher damage than the previous best move
+                if damage > best_damage:
+                    best_move_id = j
+                    best_damage = damage
+
+        # Decide between using the best move, switching to the first party Pokémon, or switching to the second party Pokémon
+        if best_move_id < 4:
+            return best_move_id  # Use the current active Pokémon's best damaging move
+        elif 4 <= best_move_id < 8:
+            return 4  # Switch to the first party Pokémon
+        else:
+            return 5  # Switch to the second party Pokémon
+
+
+    def estimate_damage(self, move_type, pkm_type, move_power, opp_pkm_type, my_attack_stage, opp_defense_stage, weather):
+        # Precompute the type chart multipliers for the move type and opponent's Pokémon type
+        type_chart_multipliers = TYPE_CHART_MULTIPLIER[move_type][opp_pkm_type]
+
+        # Calculate the damage using the precomputed multipliers and other factors
+        if opp_defense_stage != 0.0:
+            damage = move_power * type_chart_multipliers * my_attack_stage / opp_defense_stage * weather
+        else:
+            damage = 0.0
+
+        # Consider the opponent's type and the weather condition
+        damage *= self.evaluate_matchup(opp_pkm_type, pkm_type, move_type)
+
+        return damage
+
+
+    def evaluate_matchup(self, pkm_type: PkmType, opp_pkm_type: PkmType, move_type: PkmType) -> float:
+        # Determine the defensive matchup
+        defensive_matchup = TYPE_CHART_MULTIPLIER[pkm_type][move_type]
+
+        # Consider the opponent's type and the weather condition
+        defensive_matchup *= TYPE_CHART_MULTIPLIER[opp_pkm_type][pkm_type]
+
+        return defensive_matchup

@@ -13,7 +13,7 @@ total_steps: 1000000
 # Environment
 env:
   id: pkm_battle_env_wrapper
-  num_envs: 4
+  num_envs: 15
   frame_stack: 1
   # reward_as_observation: True
   # wrapper:
@@ -22,7 +22,7 @@ env:
 
 # Checkpoint
 checkpoint:
-  every: 100000
+  every: 100 # set higher want to test this
 
 # Buffer
 buffer:
