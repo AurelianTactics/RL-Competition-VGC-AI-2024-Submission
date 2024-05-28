@@ -18,7 +18,7 @@ from vgc.util.generator.PkmTeamGenerators import RandomTeamGenerator
 from vgc.behaviour import BattlePolicy
 from vgc.datatypes.Constants import TYPE_CHART_MULTIPLIER
 from vgc.datatypes.Objects import GameState
-from vgc.datatypes.Types import PkmStat, PkmType
+from vgc.datatypes.Types import PkmStat, PkmType, WeatherCondition
 
 
 
@@ -187,8 +187,7 @@ class PkmBattleEnvWrapper(gym.Wrapper):
 # Nizar's Bot
 class NiBot(BattlePolicy):
     '''
-    Bot from 2023 VGC AI competition
-    Not written by me. Copied from competition repo
+    Bot from 2023 VGC AI competition with some modifications
     https://gitlab.com/DracoStriker/pokemon-vgc-engine/-/blob/master/competition/vgc2023/NiBot_Submission%20-%20Nizar%20Haimoud/BattlePolicies.py
     '''
 
@@ -222,8 +221,9 @@ class NiBot(BattlePolicy):
                 my_attack_stage = my_team.stage[PkmStat.ATTACK]
             else:
                 my_attack_stage = 0
-
+            print("pkm moves is ", pkm.moves)
             for j, move in enumerate(pkm.moves):
+                
                 if pkm.hp == 0.0:
                     continue
 
@@ -233,9 +233,10 @@ class NiBot(BattlePolicy):
 
                 # Check if the current move has higher damage than the previous best move
                 if damage > best_damage:
-                    best_move_id = j
+                    best_move_id = j + i * 4 # think for 2024 j is 0 to 3 for each
                     best_damage = damage
-
+                print(i, "Move", j, best_move_id, "Damage", best_damage, 'Poke', pkm)
+            # print("Pokemon", i, pkm, "Move", best_move_id, "Damage", best_damage)
         # Decide between using the best move, switching to the first party Pokémon, or switching to the second party Pokémon
         if best_move_id < 4:
             return best_move_id  # Use the current active Pokémon's best damaging move
@@ -244,28 +245,49 @@ class NiBot(BattlePolicy):
         else:
             return 5  # Switch to the second party Pokémon
 
-
-    def estimate_damage(self, move_type, pkm_type, move_power, opp_pkm_type, my_attack_stage, opp_defense_stage, weather):
-        # Precompute the type chart multipliers for the move type and opponent's Pokémon type
-        type_chart_multipliers = TYPE_CHART_MULTIPLIER[move_type][opp_pkm_type]
-
-        # Calculate the damage using the precomputed multipliers and other factors
-        if opp_defense_stage != 0.0:
-            damage = move_power * type_chart_multipliers * my_attack_stage / opp_defense_stage * weather
+    def estimate_damage(self, move_type: PkmType, pkm_type: PkmType, move_power: float, opp_pkm_type: PkmType,
+                    attack_stage: int, defense_stage: int, weather: WeatherCondition) -> float:
+        '''
+        Not from original code. from updated repo
+        '''
+        stab = 1.5 if move_type == pkm_type else 1.
+        if (move_type == PkmType.WATER and weather == WeatherCondition.RAIN) or (
+                move_type == PkmType.FIRE and weather == WeatherCondition.SUNNY):
+            weather = 1.5
+        elif (move_type == PkmType.WATER and weather == WeatherCondition.SUNNY) or (
+                move_type == PkmType.FIRE and weather == WeatherCondition.RAIN):
+            weather = .5
         else:
-            damage = 0.0
+            weather = 1.
+        stage_level = attack_stage - defense_stage
+        stage = (stage_level + 2.) / 2 if stage_level >= 0. else 2. / (np.abs(stage_level) + 2.)
+        damage = TYPE_CHART_MULTIPLIER[move_type][opp_pkm_type] * stab * weather * stage * move_power
 
-        # Consider the opponent's type and the weather condition
-        damage *= self.evaluate_matchup(opp_pkm_type, pkm_type, move_type)
-
+        #print(damage, move_type, pkm_type, move_power, opp_pkm_type, attack_stage, defense_stage, weather)
         return damage
 
 
-    def evaluate_matchup(self, pkm_type: PkmType, opp_pkm_type: PkmType, move_type: PkmType) -> float:
-        # Determine the defensive matchup
-        defensive_matchup = TYPE_CHART_MULTIPLIER[pkm_type][move_type]
+    # def estimate_damage(self, move_type, pkm_type, move_power, opp_pkm_type, my_attack_stage, opp_defense_stage, weather):
+    #     # Precompute the type chart multipliers for the move type and opponent's Pokémon type
+    #     type_chart_multipliers = TYPE_CHART_MULTIPLIER[move_type][opp_pkm_type]
 
-        # Consider the opponent's type and the weather condition
-        defensive_matchup *= TYPE_CHART_MULTIPLIER[opp_pkm_type][pkm_type]
+    #     # Calculate the damage using the precomputed multipliers and other factors
+    #     if opp_defense_stage != 0.0:
+    #         damage = move_power * type_chart_multipliers * my_attack_stage / opp_defense_stage * weather
+    #     else:
+    #         damage = 0.0
 
-        return defensive_matchup
+    #     # Consider the opponent's type and the weather condition
+    #     damage *= self.evaluate_matchup(opp_pkm_type, pkm_type, move_type)
+
+    #     return damage
+
+
+    # def evaluate_matchup(self, pkm_type: PkmType, opp_pkm_type: PkmType, move_type: PkmType) -> float:
+    #     # Determine the defensive matchup
+    #     defensive_matchup = TYPE_CHART_MULTIPLIER[pkm_type][move_type]
+
+    #     # Consider the opponent's type and the weather condition
+    #     defensive_matchup *= TYPE_CHART_MULTIPLIER[opp_pkm_type][pkm_type]
+
+    #     return defensive_matchup
