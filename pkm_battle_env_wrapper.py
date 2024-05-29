@@ -31,6 +31,7 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         self.num_resets = -1
 
         self.player_index, self.opponent_index = self._get_player_opp_index()
+
         self.opponent_agent = NiBot()
 
         # competition rules
@@ -100,7 +101,7 @@ class PkmBattleEnvWrapper(gym.Wrapper):
 
         # if doing random teams
         self.env = self._get_random_team_env(self.team_generator, self.player_index)
-    
+
         self.current_obs_list, info = self.env.reset()
 
         obs = self.current_obs_list[self.player_index]
@@ -153,6 +154,7 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         Some values in the obs are bools
         '''
         obs_list = [float(x) if isinstance(x, bool) else x for x in obs_list]
+
         obs_array = np.array(obs_list, dtype=np.float32).clip(0.0, 1.0)
 
         return obs_array
@@ -221,7 +223,7 @@ class NiBot(BattlePolicy):
                 my_attack_stage = my_team.stage[PkmStat.ATTACK]
             else:
                 my_attack_stage = 0
-            print("pkm moves is ", pkm.moves)
+            #print("pkm moves is ", pkm.moves)
             for j, move in enumerate(pkm.moves):
                 
                 if pkm.hp == 0.0:
@@ -235,7 +237,7 @@ class NiBot(BattlePolicy):
                 if damage > best_damage:
                     best_move_id = j + i * 4 # think for 2024 j is 0 to 3 for each
                     best_damage = damage
-                print(i, "Move", j, best_move_id, "Damage", best_damage, 'Poke', pkm)
+                #print(i, "Move", j, best_move_id, "Damage", best_damage, 'Poke', pkm)
             # print("Pokemon", i, pkm, "Move", best_move_id, "Damage", best_damage)
         # Decide between using the best move, switching to the first party Pokémon, or switching to the second party Pokémon
         if best_move_id < 4:
