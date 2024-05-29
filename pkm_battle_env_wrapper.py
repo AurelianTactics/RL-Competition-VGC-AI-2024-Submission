@@ -154,7 +154,8 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         Some values in the obs are bools
         '''
         obs_list = [float(x) if isinstance(x, bool) else x for x in obs_list]
-
+        if min(obs_list) < -.01 or max(obs_list) > 1.01:
+            print("value outside expected obs range found")
         obs_array = np.array(obs_list, dtype=np.float32).clip(0.0, 1.0)
 
         return obs_array
