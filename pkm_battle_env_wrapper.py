@@ -60,7 +60,7 @@ class PkmBattleEnvWrapper(gym.Wrapper):
             {
                 #"state": self.env.observation_space,
                 # sheeprl wants a box space
-                "state": gym.spaces.Box(low=0, high=1, shape=(self.env.observation_space.n,), dtype=np.float32)
+                "state": gym.spaces.Box(low=0., high=2.0, shape=(self.env.observation_space.n,), dtype=np.float32)
             }
         )
 
@@ -154,9 +154,16 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         Some values in the obs are bools
         '''
         obs_list = [float(x) if isinstance(x, bool) else x for x in obs_list]
-        if min(obs_list) < -.01 or max(obs_list) > 1.01:
-            print("value outside expected obs range found")
-        obs_array = np.array(obs_list, dtype=np.float32).clip(0.0, 1.0)
+        # if min(obs_list) < -.01 or max(obs_list) > 2.01:
+        #     print("value outside expected obs range found")
+        #     # for testing purposes
+        #     obs_array = np.array(obs_list, dtype=np.float32)
+        #     print('min, max', min(obs_array), max(obs_array))
+        #     # print all values in obs less than 0 or greater than 1
+        #     for i, x in enumerate(obs_array):
+        #         if x < 0 or x > 1:
+        #             print(i, x)
+        obs_array = np.array(obs_list, dtype=np.float32).clip(0.0, 2.0)
 
         return obs_array
 

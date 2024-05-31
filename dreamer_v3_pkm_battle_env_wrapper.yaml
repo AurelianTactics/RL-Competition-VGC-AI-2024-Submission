@@ -2,13 +2,13 @@
 
 defaults:
   - dreamer_v3
-  - override /algo: dreamer_v3_XS
+  - override /algo: dreamer_v3_L #dreamer_v3_XS
   - override /env: pkm_battle_env_wrapper
   - _self_
 
 # Experiment
 seed: 5
-total_steps: 1000000
+total_steps: 10000000
 
 # Environment
 env:
@@ -22,7 +22,8 @@ env:
 
 # Checkpoint
 checkpoint:
-  every: 100 # set higher want to test this
+  every: 10000 # set higher want to test this
+  keep_last: 20
 
 # Buffer
 buffer:
