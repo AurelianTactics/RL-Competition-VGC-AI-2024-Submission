@@ -29,6 +29,8 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         '''
         '''
         self.num_resets = -1
+        self.current_episode_steps = 0
+        self.max_episode_steps = 250
 
         self.player_index, self.opponent_index = self._get_player_opp_index()
 
@@ -89,6 +91,11 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         obs = self._change_obs_bool_to_float(obs)
         obs_dict = self._put_obs_in_dict(obs)
 
+        # increment number of steps
+        self.current_episode_steps += 1
+        if self.current_episode_steps >= self.max_episode_steps:
+            terminated = True
+
         # get custom reward
         reward = self._win_loss_reward(terminated, self.player_index)
 
@@ -97,6 +104,7 @@ class PkmBattleEnvWrapper(gym.Wrapper):
     def reset(self, seed=None, options=None):
         ''''''
         self.num_resets += 1
+        self.current_episode_steps = 0
         self.player_index, self.opponent_index = self._get_player_opp_index()
 
         # if doing random teams
