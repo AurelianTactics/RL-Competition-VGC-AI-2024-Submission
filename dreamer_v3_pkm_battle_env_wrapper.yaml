@@ -2,7 +2,7 @@
 
 defaults:
   - dreamer_v3
-  - override /algo: dreamer_v3_L #dreamer_v3_XS
+  - override /algo: dreamer_v3_XL #dreamer_v3_XS
   - override /env: pkm_battle_env_wrapper
   - _self_
 
@@ -24,7 +24,7 @@ env:
 
 # Checkpoint
 checkpoint:
-  every: 1000 
+  every: 3000 
   keep_last: 5
 
 metric:
@@ -41,7 +41,7 @@ algo:
       - state
     decoder:
       - state
-  learning_starts: 512 # default is 1024
+  learning_starts: 1024 # default is 1024
 # algo:
 #   learning_starts: 65536
 #   replay_ratio: 0.125
