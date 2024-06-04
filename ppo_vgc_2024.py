@@ -13,6 +13,9 @@ import tyro
 from torch.distributions.categorical import Categorical
 from torch.utils.tensorboard import SummaryWriter
 
+from vgc.datatypes.Objects import PkmTeam
+from pkm_battle_env_wrapper_cleanrl import PkmBattleEnvWrapperCleanRL
+
 
 @dataclass
 class Args:
@@ -84,12 +87,14 @@ def make_env(env_id, idx, capture_video, run_name):
             env = gym.make(env_id, render_mode="rgb_array")
             env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
         else:
-            env = gym.make(env_id)
+            env = gym.make(env_id, teams=(PkmTeam(), PkmTeam()))
+
+        if env_id == 'PkmBattleEnv-v0':
+            env = PkmBattleEnvWrapperCleanRL(env)
         env = gym.wrappers.RecordEpisodeStatistics(env)
         return env
 
     return thunk
-
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
