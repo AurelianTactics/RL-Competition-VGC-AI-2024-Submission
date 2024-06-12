@@ -24,7 +24,7 @@ env:
 
 # Checkpoint
 checkpoint:
-  every: 3000 
+  every: 5000 
   keep_last: 5
 
 metric:

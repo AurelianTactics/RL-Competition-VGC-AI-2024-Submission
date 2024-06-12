@@ -2,73 +2,49 @@
 Wraps PkmBattleEnv into something expected by most RL algorithms
 
 working
-    DONE choose what simple, best guess, full should be
-    TEST make a dummy env so can get number of obs to fill in
-    TEST no longer want agent stuff to be encoded
-    TEST overall env flow still works
-
-    review the overall flow
-    review the obs creation
-    smoke test the obs creation
-    fuller test the custom obs
-
-    TEST sheeprl and cleanrl
-        TEST can be discrete or box based on an arg
-        DONE has id
-        DONE removes the needed teams
-        DONE arg for which type of obs to use
+    sheeprl and cleanrl
+        can be discrete or box based on an arg
+        has id
+        removes the needed teams
+        arg for which type of obs to use
             simple
             medium
             full
-        
-        TEST see if I can scale in -1 to 1 range and not 0 to 2
-
-    if time, work in the cleanrl stuff
 '''
 
 import gymnasium as gym
 import numpy as np
+from typing import List, Union
 
 from vgc.datatypes.Objects import PkmTeam
 from vgc.engine.PkmBattleEnv import PkmBattleEnv
+from vgc.behaviour.BattlePolicies import RandomPlayer
 from vgc.util.generator.PkmTeamGenerators import RandomTeamGenerator
 
-from vgc.behaviour import BattlePolicy
-from vgc.datatypes.Constants import TYPE_CHART_MULTIPLIER, MAX_HIT_POINTS, MOVE_MAX_PP, DEFAULT_TEAM_SIZE
-from vgc.datatypes.Objects import PkmMove, Pkm, PkmTeam, GameState, Weather
-from vgc.datatypes.Types import PkmStat, PkmType, WeatherCondition, \
-    N_TYPES, N_STATUS, N_STATS, N_ENTRY_HAZARD, N_WEATHER, PkmStatus, PkmEntryHazard
 
+from vgc.behaviour import BattlePolicy
+from vgc.datatypes.Constants import TYPE_CHART_MULTIPLIER
+from vgc.datatypes.Objects import GameState
+from vgc.datatypes.Types import PkmStat, PkmType, WeatherCondition
+
+from vgc.datatypes.Constants import MAX_HIT_POINTS, MOVE_MAX_PP, DEFAULT_TEAM_SIZE
+from vgc.datatypes.Objects import PkmMove, Pkm, PkmTeam, GameState, Weather
+from vgc.datatypes.Types import N_TYPES, N_STATUS, N_STATS, N_ENTRY_HAZARD, N_WEATHER, PkmStat, PkmType, \
+    PkmStatus, WeatherCondition, PkmEntryHazard
 from vgc.engine.HiddenInformation import null_pkm, null_pkm_move
-from vgc.behaviour.BattlePolicies import RandomPlayer
-from typing import List, Union
 
 
 
 class PkmBattleEnvWrapper(gym.Wrapper):
     '''
     '''
-    def __init__(self, id: str, obs_type: str = 'medium',  gym_space_type: str = 'Dict',
-                 is_debug_mode: bool = False):
+    def __init__(self, id: str, obs_type: str = 'simple', **kwargs):
         '''
         '''
-        self.id = id
-        self.obs_type = obs_type
-        self.gym_space_type = gym_space_type
-        self.is_debug_mode = is_debug_mode
-
         self.num_resets = -1
         self.current_episode_steps = 0
         self.max_episode_steps = 250
-        self.obs_type_simple = 'simple'
-        self.obs_type_medium = 'medium'
-        self.obs_type_full = 'full'
 
-        
-        if self.obs_type not in [self.obs_type_simple, self.obs_type_medium, self.obs_type_full]:
-            print(f"Error: obs_type {self.obs_type} not recognized. Using simple obs")
-            self.obs_type = self.obs_type_medium
-        
         self.player_index, self.opponent_index = self._get_player_opp_index()
 
         self.opponent_agent = NiBot()
@@ -79,36 +55,50 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         self.team_generator = RandomTeamGenerator(2)
         self.env = self._get_random_team_env(self.team_generator, self.player_index)
 
-        # get a dummy game state to get obs size
-        dummy_game_state_list, _ = self.env.reset()
-        dummy_obs = self._get_obs_from_game_state(dummy_game_state_list[self.player_index], obs_type)
-        self.num_obs = len(dummy_obs)
+        # set team for testing
+        # if doing non random mode
+        # team0, team1 = PkmTeam(), PkmTeam()
+        # self.env = PkmBattleEnv((team0, team1),
+        #            # encode Fasle for forward env
+        #            #encode=(agent0.requires_encode(), agent1.requires_encode()))  # set new environment with teams
+        #            encode=(True, True))
+        # self.opponent_agent = RandomPlayer()
 
-        self.current_obs_list = []
         
+        # if this is needed then do a reset call here. shouldn't be needed
+        #self.current_obs_list = [np.zeros((self.env.observation_space.n,))]
+        self.current_obs_list = []
+
         self.reward_range = (-1, 1)
         self.action_space = self.env.action_space
+        
 
-        self.min_obs_range = -1.0
-        self.max_obs_range = 1.0
+        self.obs_type = obs_type
+        if self.obs_type == 'simple':
+            self.num_obs =
+        elif self.obs_type == 'medium':
+            self.num_obs = 
+        elif self.obs_type == 'full':
+            self.num_obs =
 
-        if self.gym_space_type == 'Box':
-            gym.spaces.Box(low=self.min_obs_range, high=self.max_obs_range, shape=(self.num_obs,), dtype=np.float32)
-        else:
-            self.observation_space = gym.spaces.Dict(
-                {
-                    "state": gym.spaces.Box(low=self.min_obs_range, high=self.max_obs_range, shape=(self.num_obs,), dtype=np.float32)
-                }
-            )
+        self.observation_space = gym.spaces.Dict(
+            {
+                #"state": self.env.observation_space,
+                # sheeprl wants a box space
+                "state": gym.spaces.Box(low=-1.0, high=2.0, shape=(self.num_obs,), dtype=np.float32)
+            }
+        )
 
     def step(self, action):
         '''
         Get opponent action then step through env
         '''
 
+        # if opponent needs the non-bool obs can do this
+        # may be an unnecessary step
+        #opponent_obs = self._change_obs_bool_to_float(self.current_obs_list[self.opponent_index])
         opponent_obs = self.current_obs_list[self.opponent_index]
         opponent_action = self.opponent_agent.get_action(opponent_obs)
-    
         if opponent_action >= self.action_space.n or opponent_action < 0:
             print(f"Error: opponent action {opponent_action} | action space {self.action_space.n}")
             opponent_action = 0
@@ -120,8 +110,9 @@ class PkmBattleEnvWrapper(gym.Wrapper):
 
         self.current_obs_list, reward_list, terminated, truncated, info = self.env.step(action_list)
 
-        obs = self._get_obs_from_game_state(self.current_obs_list[self.player_index],
-                                            self.obs_type, self.is_debug_mode)
+        obs = self.current_obs_list[self.player_index]
+        obs = self._change_obs_bool_to_float(obs)
+        obs_dict = self._put_obs_in_dict(obs)
 
         # increment number of steps
         self.current_episode_steps += 1
@@ -131,7 +122,7 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         # get custom reward
         reward = self._win_loss_reward(terminated, self.player_index)
 
-        return obs, reward, terminated, truncated, info
+        return obs_dict, reward, terminated, truncated, info
 
     def reset(self, seed=None, options=None):
         ''''''
@@ -144,10 +135,11 @@ class PkmBattleEnvWrapper(gym.Wrapper):
 
         self.current_obs_list, info = self.env.reset()
 
-        obs = self._get_obs_from_game_state(self.current_obs_list[self.player_index],
-                                            self.obs_type, self.is_debug_mode)
+        obs = self.current_obs_list[self.player_index]
+        obs = self._change_obs_bool_to_float(obs)
+        obs_dict = self._put_obs_in_dict(obs)
 
-        return obs, info
+        return obs_dict, info
 
     def render(self, mode='console'):
         ''''''
@@ -223,16 +215,16 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         team1 = team_generator.get_team().get_battle_team([0, 1, 2])
 
         if player_index == 0:
-            encode_state_tuple = (False, False)
+            encode_state_tuple = (True, False)
         else:
-            encode_state_tuple = (False, False)
+            encode_state_tuple = (False, True)
 
         env = PkmBattleEnv((team0, team1), encode=encode_state_tuple)
 
         return env
 
     
-    def _get_obs_from_game_state(self, game_state: GameState, obs_type: str,
+    def _get_obs_from_game_state(self, game_state: GameState, obs_type: str, num_obs: int,
                                  is_debug_mode: bool = False) -> np.ndarray:
         '''
         Get obs from game state
@@ -244,59 +236,49 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         maybe try to make sure max range is 1?
         '''
         obs_list = []
-        min_range = self.min_obs_range
-        max_range = self.max_obs_range
+        min_range = -1.0
+        max_range = 2.0
         default_value_not_revealed = -0.5
         default_value_fainted = -1.0
 
         agent_team = game_state.teams[0]
         opp_team = game_state.teams[1]
 
-        # survival 1/0, hp percent, revealed 1/0
-        # 9 values
         obs_list = self._get_surviving_revealed_obs(agent_team, obs_list)
         obs_list = self._get_surviving_revealed_obs(opp_team, obs_list)
 
         # add nibot values
-        # each pkm damage against opponents + what nibot woudl select as ana ction
-        # 18 values
         obs_nibot_list = self.obs_nibot.get_action(game_state, is_non_active_obs=False, party_index=None)
         obs_list.extend(obs_nibot_list)
 
-        if obs_type != self.obs_type_simple:
-            # nibot dmg for agent team against other revealed pkm
-            # 12 values
-            for party_index in range(len(opp_team.party)):
-                if opp_team.party[party_index].revealed:
-                    obs_nibot_non_active_list = self.obs_nibot.get_action(game_state, is_non_active_obs=True,
-                        party_index=party_index)
-                else:
-                    # not revealed, so populate the default values
-                    obs_nibot_non_active_list = [default_value_not_revealed] * 12
-
-                obs_list.extend(obs_nibot_non_active_list)
-
-            # type chart match up for agent team against revealed opp team
-            # 9 values
-            obs_list = self._get_type_chart_values(agent_team, opp_team, obs_list,
-                default_value_not_revealed)
-            
-            # 8 values for medium
-            obs_list = self._encode_team_private(obs_list, agent_team, obs_type, True,
-                                                    default_value_not_revealed, default_value_fainted)
-            # 8 values for medium
-            obs_list = self._encode_team_private(obs_list, opp_team, obs_type, False,
-                                                default_value_not_revealed, default_value_fainted)
-        
         # add weather
-        if obs_type == self.obs_type_full:
-            obs_list += self._one_hot(game_state.weather.condition, N_WEATHER)
-            obs_list += [game_state.weather.n_turns_no_clear / 5]
+        obs_list += self.one_hot(game_state.weather.condition, N_WEATHER)
+        obs_list += [game_state.weather.n_turns_no_clear / 5]
 
-            obs_list = self._encode_team_public(agent_team, obs_list)
-            obs_list = self._encode_team_public(opp_team, obs_list)
+        # team obs that are public information
+        obs_list = self._encode_team_public(agent_team, obs_list)
+        obs_list = self._encode_team_public(opp_team, obs_list)
 
-        #obs_list = [float(x) if isinstance(x, bool) else x for x in obs_list]
+        # type chart values
+        obs_list = self._get_type_chart_values(agent_team, opp_team, obs_list,
+            default_value_not_revealed)
+        
+        # to do
+        # get the remaining non public team and move obs
+            
+        # nibot dmg for agent team against other revealed pkm
+        for party_index in range(len(opp_team.party)):
+            if opp_team.party[party_index].revealed:
+                obs_nibot_non_active_list = self.obs_nibot.get_action(game_state, is_non_active_obs=True,
+                    party_index=party_index)
+            else:
+                # not revealed, so populate the default values
+                obs_nibot_non_active_list = [default_value_not_revealed] * 12
+
+            obs_list.extend(obs_nibot_non_active_list)
+
+
+        obs_list = [float(x) if isinstance(x, bool) else x for x in obs_list]
 
         if is_debug_mode:
             # for testing purposes
@@ -311,87 +293,8 @@ class PkmBattleEnvWrapper(gym.Wrapper):
 
         obs_array = np.array(obs_list, dtype=np.float32).clip(min_range, max_range)
 
-        if self.gym_space_type == 'Box':
-            obs = obs_array
-        else:
-            obs = self._put_obs_in_dict(obs)
-
-        return obs
-
-    def _encode_move(self, obs_list, move: PkmMove, obs_type: str,
-                     pkm_type) -> list:
-        '''
-        moves.append(PkmMove(m_power, move_type=m_type))
-        https://gitlab.com/DracoStriker/pokemon-vgc-engine/-/blob/master/vgc/util/generator/PkmTeamGenerators.py#L42
-        '''
-        if obs_type == self.obs_type_full:
-            obs_list += [move.power / 390.]
-            obs_list += self._one_hot(move.type, N_TYPES)
-            if pkm_type == move.type:
-                obs_list.append(1.)
-            else:
-                obs_list.append(0.)
-        else:
-            obs_list += [move.power / 390.]
-            if pkm_type == move.type:
-                obs_list.append(1.)
-            else:
-                obs_list.append(0.)
-
-        return obs_list
-
-    def _encode_pkm(self, obs_list, pkm: Pkm, obs_type: str,
-                    default_value_not_revealed: float, default_value_fainted: float,
-                    is_agent_team: bool):
-        '''
-        HP as percent of max stored elsewhere
-        '''
-        if obs_type == self.obs_type_full:
-            num_move_features = N_TYPES + 2
-            num_moves = 4
-            num_expected_features = (1 + N_TYPES + N_STATUS + num_moves + num_move_features)
-        
-            if pkm.fainted():
-                obs_list += [default_value_fainted] * num_expected_features
-            elif is_agent_team or pkm.revealed:
-                obs_list += [pkm.n_turns_asleep / 5]
-                obs_list += self._one_hot(pkm.type, N_TYPES)
-                obs_list += self._one_hot(pkm.status, N_STATUS)
-
-                for move in pkm.moves:
-                    obs_list = self._encode_move(obs_list, move, obs_type, pkm.type)
-            else:
-                # should only occur if pkm is not fainted and not revealed and not agent team
-                obs_list += [default_value_not_revealed] * num_expected_features
-        else:
-            num_move_features = 2
-            num_moves = 4
-            num_expected_features = (num_moves + num_move_features)
-        
-            if pkm.fainted():
-                obs_list += [default_value_fainted] * num_expected_features
-            elif is_agent_team or pkm.revealed:
-                for move in pkm.moves:
-                    obs_list = self._encode_move(obs_list, move, obs_type, pkm.type)
-            else:
-                # should only occur if pkm is not fainted and not revealed and not agent team
-                obs_list += [default_value_not_revealed] * num_expected_features
-        
-        return obs_list
-
-    def _encode_team_private(self, obs_list, team, obs_type: str, is_agent_team: bool,
-            default_value_not_revealed: float, default_value_fainted: float):
-        '''
-        '''
-        obs_list = self._encode_pkm(obs_list, team.active, obs_type, default_value_not_revealed,
-                default_value_fainted, is_agent_team)
+        return obs_array
     
-        for pkm in team.party:
-            self._encode_pkm(obs_list, pkm, obs_type, default_value_not_revealed,
-                default_value_fainted, is_agent_team)
-
-        return obs_list
-
     def _get_type_chart_values(self, agent_team: PkmTeam, opp_team: PkmTeam, obs_list: list,
                                default_value: float) -> list:
         '''
@@ -403,9 +306,8 @@ class PkmBattleEnvWrapper(gym.Wrapper):
             for opp_pkm in opp_team_list:
                 if opp_pkm.revealed:
                     # get type chart value
-                    # scale it by 2.0 to keep in 0 to 1 range
                     type_chart_value = TYPE_CHART_MULTIPLIER[agent_pkm.type][opp_pkm.type] / 2.0
-                    obs_list.append(type_chart_value)
+                    obs_list.append(type_chart_value) 
                 else:
                     obs_list.append(default_value)
 
@@ -415,7 +317,7 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         '''
         Encode the public information of a team
         '''
-        obs_list += [float(team.confused)]
+        obs_list += [team.confused]
         obs_list += team.entry_hazard
         for stat in range(N_STATS):
             obs_list += [team.stage[stat] / 5]
@@ -449,14 +351,25 @@ class PkmBattleEnvWrapper(gym.Wrapper):
 
         return obs_list
     
-    def _one_hot(self, p, n):
+    def one_hot(self, p, n):
         b = [0] * n
         b[p] = 1
     
         return b
     
+    def encode_team(self, obs_list, team, obs_type,):
+        '''
+        '''
+        # STOPPED HERE
+        for pkm in team.party:
+            encode_pkm(obs_list, pkm)
+        encode_pkm(obs_list, team.active)
+
+    
 
 
+
+# Nizar's Bot
 class NiBot(BattlePolicy):
     '''
     Bot from 2023 VGC AI competition with some modifications
@@ -548,10 +461,6 @@ class ObsFromNiBot(BattlePolicy):
 
     def get_action(self, g: GameState, is_non_active_obs: bool, party_index: int):
 
-        # will clip value from -1 to 1 elsewhere, want value to be scaled down a bit here
-        # ie without this value 480 damage would be 2.0 (240 max HP points), with this value is 2.0 / damage_scale_value
-        damage_scale_value = 5.
-
         obs_nibot_list = []
         # Get weather condition
         weather = g.weather.condition
@@ -591,7 +500,7 @@ class ObsFromNiBot(BattlePolicy):
                     damage = self.estimate_damage(move.type, pkm.type, move.power, opp_active_type, my_attack_stage,
                                             opp_defense_stage, weather)
 
-                    scaled_damage = (damage / MAX_HIT_POINTS) / damage_scale_value
+                    scaled_damage = damage / MAX_HIT_POINTS
                 
                 # can clip this to desired range outside of this function
                 obs_nibot_list.append(scaled_damage)
@@ -616,7 +525,7 @@ class ObsFromNiBot(BattlePolicy):
             expected_num_obs = 12
         else:
             expected_num_obs = 18
-            nibot_action_one_hot_list = self._one_hot(nibot_action, 6) 
+            nibot_action_one_hot_list = self.one_hot(nibot_action, 6) 
             obs_nibot_list.extend(nibot_action_one_hot_list)
 
         if len(obs_nibot_list) != expected_num_obs:
@@ -645,7 +554,7 @@ class ObsFromNiBot(BattlePolicy):
         #print(damage, move_type, pkm_type, move_power, opp_pkm_type, attack_stage, defense_stage, weather)
         return damage
     
-    def _one_hot(self, p, n):
+    def one_hot(self, p, n):
         b = [0] * n
         b[p] = 1
     
