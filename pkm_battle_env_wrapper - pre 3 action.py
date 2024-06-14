@@ -2,8 +2,39 @@
 Wraps PkmBattleEnv into something expected by most RL algorithms
 
 working
+    DONE more env testing
     work for cleanrl?
     work for sheeprl?
+
+    DONE test simple if doing a simple sheeprl
+
+    DONE review the overall flow
+    DONE review the obs creation
+    DONE smoke test the obs creation
+    DONE fuller test the custom obs
+        stopped at revealing a move and seeing if it shows up for medium
+            in a notebook I can reveal but not in my wrapper. see why
+        honestly, might not want to bother with opp moves for medium
+            maybe just revealed power? idk would cut medium obs way down for something that will
+            be default value 90% of the time
+
+    DONE choose what simple, best guess, full should be
+    DONE make a dummy env so can get number of obs to fill in
+    DONE no longer want agent stuff to be encoded
+    DONE overall env flow still works
+
+
+    DONE sheeprl and cleanrl
+        DONE can be discrete or box based on an arg
+        DONE has id
+        DONE removes the needed teams
+        DONE arg for which type of obs to use
+            simple
+            medium
+            full
+        
+        DONE see if I can scale in -1 to 1 range and not 0 to 2
+
     if time, work in the cleanrl stuff
 '''
 
@@ -23,6 +54,7 @@ from vgc.datatypes.Types import PkmStat, PkmType, WeatherCondition, \
 from vgc.engine.HiddenInformation import null_pkm, null_pkm_move
 from vgc.behaviour.BattlePolicies import RandomPlayer
 from typing import List, Union
+
 
 
 class PkmBattleEnvWrapper(gym.Wrapper):
@@ -65,16 +97,12 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         # get a dummy game state to get obs size
         dummy_game_state_list, _ = self.env.reset()
         dummy_obs = self._get_obs_from_game_state(dummy_game_state_list[self.player_index], self.obs_type)
-        if self.gym_space_type == 'Box':
-            self.num_obs = len(dummy_obs)
-        else:
-            self.num_obs = len(dummy_obs['state'])
+        self.num_obs = len(dummy_obs)
 
         self.current_obs_list = []
 
         self.reward_range = (-1, 1)
-        self.action_space = gym.spaces.Discrete(3)
-        #self.action_space = self.env.action_space
+        self.action_space = self.env.action_space
 
         if self.gym_space_type == 'Box':
             self.observation_space = gym.spaces.Box(low=self.min_obs_range,
@@ -108,12 +136,11 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         '''
         Get opponent action then step through env
         '''
-        action = self._turn_agent_action_into_env_action(action, self.current_obs_list[self.player_index])
 
         opponent_obs = self.current_obs_list[self.opponent_index]
         opponent_action = self.opponent_agent.get_action(opponent_obs)
 
-        if opponent_action >= self.env.action_space.n or opponent_action < 0:
+        if opponent_action >= self.action_space.n or opponent_action < 0:
             print(f"Error: opponent action {opponent_action} | action space {self.action_space.n}")
             opponent_action = 0
 
@@ -160,93 +187,6 @@ class PkmBattleEnvWrapper(gym.Wrapper):
 
         return player_index, opp_index
         
-    def _turn_agent_action_into_env_action(self, action, agent_game_state):
-        '''
-        Action values are
-        0: select best move
-        1: switch to first pkm
-        2: switch to second pkm
-
-        Env actions are
-        0 to 3: action of active pokm
-        4: switch to first pkm
-        5: switch to second pkm
-        '''
-        if action == 0:
-            # get best dmg action
-            action = self._get_best_active_damage_action(agent_game_state)
-        else:
-            # switch to first or second pkm
-            action = action + 3
-
-        return action
-
-    def _get_best_active_damage_action(self, g: GameState):
-        '''
-        '''
-        # Get weather condition
-        weather = g.weather.condition
-
-        # Get my Pokémon team
-        my_team = g.teams[0]
-        my_pkms = [my_team.active]
-
-        # Get opponent's team
-        opp_team = g.teams[1]
-        opp_active = opp_team.active
-
-        opp_active_type = opp_active.type
-        opp_defense_stage = opp_team.stage[PkmStat.DEFENSE]
-
-        # Initialize variables for the best move and its damage
-        best_move_id = -1
-        best_damage = -np.inf
-
-        # Iterate over all my Pokémon and their moves to find the most damaging move
-        for i, pkm in enumerate(my_pkms):
-            if i == 0:
-                my_attack_stage = my_team.stage[PkmStat.ATTACK]
-            else:
-                my_attack_stage = 0
-
-            for j, move in enumerate(pkm.moves):
-                
-                damage = self._estimate_damage(move.type, pkm.type, move.power, opp_active_type, my_attack_stage,
-                                            opp_defense_stage, weather)
-                
-                # Check if the current move has higher damage than the previous best move
-                if damage > best_damage:
-                    best_move_id = j + i * 4 # think for 2024 j is 0 to 3 for each
-                    best_damage = damage
-
-        if best_move_id < 0 or best_move_id > 3:
-            print(f"Error: best move id {best_move_id} not in expected range")
-            best_move_id = 0
-
-        return best_move_id
-
-    
-    def _estimate_damage(self, move_type: PkmType, pkm_type: PkmType, move_power: float, opp_pkm_type: PkmType,
-                    attack_stage: int, defense_stage: int, weather: WeatherCondition) -> float:
-        '''
-        Not from original code. from updated repo
-        '''
-        stab = 1.5 if move_type == pkm_type else 1.
-        if (move_type == PkmType.WATER and weather == WeatherCondition.RAIN) or (
-                move_type == PkmType.FIRE and weather == WeatherCondition.SUNNY):
-            weather = 1.5
-        elif (move_type == PkmType.WATER and weather == WeatherCondition.SUNNY) or (
-                move_type == PkmType.FIRE and weather == WeatherCondition.RAIN):
-            weather = .5
-        else:
-            weather = 1.
-        stage_level = attack_stage - defense_stage
-        stage = (stage_level + 2.) / 2 if stage_level >= 0. else 2. / (np.abs(stage_level) + 2.)
-        damage = TYPE_CHART_MULTIPLIER[move_type][opp_pkm_type] * stab * weather * stage * move_power
-
-        #print(damage, move_type, pkm_type, move_power, opp_pkm_type, attack_stage, defense_stage, weather)
-        return damage
-
     def _win_loss_reward(self, terminated, player_index):
         '''
         Does a reward for winning or losing
@@ -263,6 +203,24 @@ class PkmBattleEnvWrapper(gym.Wrapper):
                     reward = -1.
             #print(f"reward {reward} | terminated {terminated} | winner {self.env.winner} | player_index {player_index}|")
         return reward
+
+    # def _change_obs_bool_to_float(self, obs_list):
+    #     '''
+    #     Some values in the obs are bools
+    #     '''
+    #     obs_list = [float(x) if isinstance(x, bool) else x for x in obs_list]
+    #     # if min(obs_list) < -.01 or max(obs_list) > 2.01:
+    #     #     print("value outside expected obs range found")
+    #     #     # for testing purposes
+    #     #     obs_array = np.array(obs_list, dtype=np.float32)
+    #     #     print('min, max', min(obs_array), max(obs_array))
+    #     #     # print all values in obs less than 0 or greater than 1
+    #     #     for i, x in enumerate(obs_array):
+    #     #         if x < 0 or x > 1:
+    #     #             print(i, x)
+    #     obs_array = np.array(obs_list, dtype=np.float32).clip(-1.0, 2.0)
+
+    #     return obs_array
 
     def _put_obs_in_dict(self, obs):
         '''
@@ -321,21 +279,21 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         obs_list = self._get_surviving_revealed_obs(opp_team, obs_list, False, default_value_not_revealed)
 
         # add nibot values
-        # each pkm best damage against active opponent
-        # 3 values
+        # each pkm damage against opponents + what nibot woudl select as ana ction
+        # 18 values
         obs_nibot_list = self.obs_nibot.get_action(game_state, is_non_active_obs=False, party_index=None)
         obs_list.extend(obs_nibot_list)
 
         if obs_type != self.obs_type_simple:
-            # nibot best dmg for agent team against other revealed pkm
-            # 6 values
+            # nibot dmg for agent team against other revealed pkm
+            # 24 values
             for party_index in range(len(opp_team.party)):
                 if opp_team.party[party_index].revealed:
                     obs_nibot_non_active_list = self.obs_nibot.get_action(game_state, is_non_active_obs=True,
                         party_index=party_index)
                 else:
                     # not revealed, so populate the default values
-                    obs_nibot_non_active_list = [default_value_not_revealed] * 3
+                    obs_nibot_non_active_list = [default_value_not_revealed] * 12
 
                 obs_list.extend(obs_nibot_non_active_list)
 
@@ -343,19 +301,16 @@ class PkmBattleEnvWrapper(gym.Wrapper):
             # 9 values
             obs_list = self._get_type_chart_values(agent_team, opp_team, obs_list,
                 default_value_not_revealed)
-        
-        # add weather
-        if obs_type == self.obs_type_full:
-
-            # not doing for medium or simple ofr now. if want to add for  medium then will have to
-            # move functions or rethink logic
+            
             # 24 values for medium (2 per move, 4 moves per pkm, 3 pkm per team)
             obs_list = self._encode_team_private(obs_list, agent_team, obs_type, True,
                                                     default_value_not_revealed, default_value_fainted)
             # 24 values for medium
             obs_list = self._encode_team_private(obs_list, opp_team, obs_type, False,
                                                 default_value_not_revealed, default_value_fainted)
-            
+        
+        # add weather
+        if obs_type == self.obs_type_full:
             obs_list += self._one_hot(game_state.weather.condition, N_WEATHER)
             obs_list += [game_state.weather.n_turns_no_clear / 5]
 
@@ -621,7 +576,7 @@ class NiBot(BattlePolicy):
     def estimate_damage(self, move_type: PkmType, pkm_type: PkmType, move_power: float, opp_pkm_type: PkmType,
                     attack_stage: int, defense_stage: int, weather: WeatherCondition) -> float:
         '''
-        From VGC 2024 competition
+        Not from original code. from updated repo
         '''
         stab = 1.5 if move_type == pkm_type else 1.
         if (move_type == PkmType.WATER and weather == WeatherCondition.RAIN) or (
@@ -674,15 +629,17 @@ class ObsFromNiBot(BattlePolicy):
         opp_active_type = opp_active.type
         opp_defense_stage = opp_team.stage[PkmStat.DEFENSE]
 
-        # Iterate over all my Pokémon and their moves to find the most damaging move per pkm
-        for i, pkm in enumerate(my_pkms):
-            best_move_dmg_for_pkm = -np.inf
+        # Initialize variables for the best move and its damage
+        best_move_id = -1
+        best_damage = -np.inf
 
+        # Iterate over all my Pokémon and their moves to find the most damaging move
+        for i, pkm in enumerate(my_pkms):
             if i == 0:
                 my_attack_stage = my_team.stage[PkmStat.ATTACK]
             else:
                 my_attack_stage = 0
-
+            #print("pkm moves is ", pkm.moves)
             for j, move in enumerate(pkm.moves):
                 
                 if pkm.hp == 0.0:
@@ -690,26 +647,43 @@ class ObsFromNiBot(BattlePolicy):
                     scaled_damage = 0.
                 else:
                     # Estimate the damage of the move
-                    damage = self._estimate_damage(move.type, pkm.type, move.power, opp_active_type, my_attack_stage,
+                    damage = self.estimate_damage(move.type, pkm.type, move.power, opp_active_type, my_attack_stage,
                                             opp_defense_stage, weather)
 
                     scaled_damage = (damage / pkm_hp_max) / damage_scale_value
+                
+                # can clip this to desired range outside of this function
+                obs_nibot_list.append(scaled_damage)
 
                 # Check if the current move has higher damage than the previous best move
-                if scaled_damage > best_move_dmg_for_pkm:
-                    best_move_dmg_for_pkm = scaled_damage
+                if damage > best_damage:
+                    best_move_id = j + i * 4 # think for 2024 j is 0 to 3 for each
+                    best_damage = damage
+                
+                #print(i, "Move", j, best_move_id, "Damage", best_damage, 'Poke', pkm)
+            # print("Pokemon", i, pkm, "Move", best_move_id, "Damage", best_damage)
+        # Decide between using the best move, switching to the first party Pokémon, or switching to the second party Pokémon
+        if best_move_id < 4:
+            nibot_action = best_move_id
+        elif 4 <= best_move_id < 8:
+            nibot_action = 4
+        else:
+            nibot_action = 5
 
-            # add best dmg pkm can do to the obs list
-            obs_nibot_list.append(best_move_dmg_for_pkm)
-
-        expected_num_obs = 3
+        # get the NiBot recommended action
+        if is_non_active_obs:
+            expected_num_obs = 12
+        else:
+            expected_num_obs = 18
+            nibot_action_one_hot_list = self._one_hot(nibot_action, 6)
+            obs_nibot_list.extend(nibot_action_one_hot_list)
 
         if len(obs_nibot_list) != expected_num_obs:
             print(f"ObsNiBot obs_list not {expected_num_obs} long. It is {len(obs_nibot_list)} long. Is non active obs: {is_non_active_obs}")
 
         return obs_nibot_list
 
-    def _estimate_damage(self, move_type: PkmType, pkm_type: PkmType, move_power: float, opp_pkm_type: PkmType,
+    def estimate_damage(self, move_type: PkmType, pkm_type: PkmType, move_power: float, opp_pkm_type: PkmType,
                     attack_stage: int, defense_stage: int, weather: WeatherCondition) -> float:
         '''
         Not from original code. from updated repo
@@ -735,6 +709,7 @@ class ObsFromNiBot(BattlePolicy):
         b[p] = 1
     
         return b
+    
 
 
 class SimpleBot(BattlePolicy):
@@ -780,7 +755,7 @@ class SimpleBot(BattlePolicy):
                     continue
 
                 # Estimate the damage of the move
-                damage = self._estimate_damage(move.type, pkm.type, move.power, opp_active_type, my_attack_stage,
+                damage = self.estimate_damage(move.type, pkm.type, move.power, opp_active_type, my_attack_stage,
                                          opp_defense_stage, weather)
 
                 # Check if the current move has higher damage than the previous best move
@@ -797,7 +772,7 @@ class SimpleBot(BattlePolicy):
         else:
             return 5  # Switch to the second party Pokémon
 
-    def _estimate_damage(self, move_type: PkmType, pkm_type: PkmType, move_power: float, opp_pkm_type: PkmType,
+    def estimate_damage(self, move_type: PkmType, pkm_type: PkmType, move_power: float, opp_pkm_type: PkmType,
                     attack_stage: int, defense_stage: int, weather: WeatherCondition) -> float:
         '''
         Not from original code. from updated repo
