@@ -171,13 +171,37 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         0 to 3: action of active pokm
         4: switch to first pkm
         5: switch to second pkm
+
+        possible improvement:
+        if best_damage = 0, then possible to get cheesed into a draw but pretty unlikely
+        swapping probably has more downside thatn risk of getting cheesed into a draw
         '''
+        best_action, best_damage = self._get_best_action(action, agent_game_state)
         if action == 0:
             # get best dmg action
-            action = self._get_best_active_damage_action(agent_game_state)
+            action = best_action
         else:
-            # switch to first or second pkm
-            action = action + 3
+            # switch to first or second pkm if alive
+            # and if opp has more than 1 pkm left
+            if action == 1 or action == 2:
+                is_more_than_opp_pkm_alive = False
+                # if only 1 pkm is alive on the other team than don't swap
+                for pkm in agent_game_state.teams[1].party:
+                    if pkm.hp > 0.0 or not pkm.fainted():
+                        is_more_than_opp_pkm_alive = True
+                        break
+                
+                if not is_more_than_opp_pkm_alive:
+                    pkm = agent_game_state.teams[0].party[action-1]
+                    if pkm.fainted() or pkm.hp <= 0.0:
+                        action = best_action
+                    else:
+                        action = action + 3
+                else:
+                    # only one pkm left on opp team, so don't swap
+                    action = best_action
+            else:
+                action = best_action
 
         return action
 
@@ -223,7 +247,7 @@ class PkmBattleEnvWrapper(gym.Wrapper):
             print(f"Error: best move id {best_move_id} not in expected range")
             best_move_id = 0
 
-        return best_move_id
+        return best_move_id, best_damage
 
     
     def _estimate_damage(self, move_type: PkmType, pkm_type: PkmType, move_power: float, opp_pkm_type: PkmType,
@@ -327,41 +351,54 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         obs_list.extend(obs_nibot_list)
 
         if obs_type != self.obs_type_simple:
+            # stores the best damage for each opp pkm to agent team. 4th value is a -1 if all not revaled
+            # all moves are revealed or not. seems unlikely all moves will be revealed
+            # I think these 12 values are likely not that useful
+            opp_dmg_to_agent_list = []
             # nibot best dmg for agent team against other revealed pkm
             # 6 values
             for party_index in range(len(opp_team.party)):
                 if opp_team.party[party_index].revealed:
                     obs_nibot_non_active_list = self.obs_nibot.get_action(game_state, is_non_active_obs=True,
                         party_index=party_index)
+                    STOPPED HERE
+                    PKM is revealed but unsure what moves are
+                    need something like self.obs_nibot but only for revealed moves and puts -1 if all moves 
+                    are not revealed
+                    also a -1 at the end
                 else:
                     # not revealed, so populate the default values
                     obs_nibot_non_active_list = [default_value_not_revealed] * 3
+                    opp_dmg_to_agent_list.extend([default_value_not_revealed] * 4)
 
                 obs_list.extend(obs_nibot_non_active_list)
+                obs_list.extend(opp_dmg_to_agent_list)
 
-            # type chart match up for agent team against revealed opp team
-            # 9 values
-            obs_list = self._get_type_chart_values(agent_team, opp_team, obs_list,
-                default_value_not_revealed)
+            # get active, will be revealed but some of the moves might be not revealed
+
+            # # type chart match up for agent team against revealed opp team
+            # # 9 values
+            # obs_list = self._get_type_chart_values(agent_team, opp_team, obs_list,
+            #     default_value_not_revealed)
         
-        # add weather
-        if obs_type == self.obs_type_full:
+        # # add weather
+        # if obs_type == self.obs_type_full:
 
-            # not doing for medium or simple ofr now. if want to add for  medium then will have to
-            # move functions or rethink logic
-            # 24 values for medium (2 per move, 4 moves per pkm, 3 pkm per team)
-            obs_list = self._encode_team_private(obs_list, agent_team, obs_type, True,
-                                                    default_value_not_revealed, default_value_fainted)
-            # 24 values for medium
-            obs_list = self._encode_team_private(obs_list, opp_team, obs_type, False,
-                                                default_value_not_revealed, default_value_fainted)
+        #     # not doing for medium or simple ofr now. if want to add for  medium then will have to
+        #     # move functions or rethink logic
+        #     # 24 values for medium (2 per move, 4 moves per pkm, 3 pkm per team)
+        #     obs_list = self._encode_team_private(obs_list, agent_team, obs_type, True,
+        #                                             default_value_not_revealed, default_value_fainted)
+        #     # 24 values for medium
+        #     obs_list = self._encode_team_private(obs_list, opp_team, obs_type, False,
+        #                                         default_value_not_revealed, default_value_fainted)
             
-            obs_list += self._one_hot(game_state.weather.condition, N_WEATHER)
-            obs_list += [game_state.weather.n_turns_no_clear / 5]
+        #     obs_list += self._one_hot(game_state.weather.condition, N_WEATHER)
+        #     obs_list += [game_state.weather.n_turns_no_clear / 5]
 
-            obs_list = self._encode_team_public(agent_team, obs_list)
-            obs_list = self._encode_team_public(opp_team, obs_list)
-            # to do: add full obs for moves
+        #     obs_list = self._encode_team_public(agent_team, obs_list)
+        #     obs_list = self._encode_team_public(opp_team, obs_list)
+        #     # to do: add full obs for moves
 
         #obs_list = [float(x) if isinstance(x, bool) else x for x in obs_list]
 
