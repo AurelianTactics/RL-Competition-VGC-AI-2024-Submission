@@ -176,33 +176,46 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         if best_damage = 0, then possible to get cheesed into a draw but pretty unlikely
         swapping probably has more downside thatn risk of getting cheesed into a draw
         '''
-        best_action, best_damage = self._get_best_action(action, agent_game_state)
+        #print("---- getting agent action")
+        best_active_action, best_damage = self._get_best_active_damage_action(agent_game_state)
+
         if action == 0:
             # get best dmg action
-            action = best_action
+            action = best_active_action
         else:
             # switch to first or second pkm if alive
             # and if opp has more than 1 pkm left
             if action == 1 or action == 2:
+                #print("action in is 1 or 2 ", action)
                 is_more_than_opp_pkm_alive = False
-                # if only 1 pkm is alive on the other team than don't swap
-                for pkm in agent_game_state.teams[1].party:
-                    if pkm.hp > 0.0 or not pkm.fainted():
+               
+                for opp_pkm in agent_game_state.teams[1].party:
+                    if opp_pkm.hp > 0.0 or not opp_pkm.fainted():
                         is_more_than_opp_pkm_alive = True
+                        #print(opp_pkm.hp, opp_pkm.fainted(), is_more_than_opp_pkm_alive)
                         break
                 
-                if not is_more_than_opp_pkm_alive:
+                # if only 1 pkm is alive on the other potentially allow the swap
+                if is_more_than_opp_pkm_alive:
+                    # see if pkm to swap to is alive
                     pkm = agent_game_state.teams[0].party[action-1]
                     if pkm.fainted() or pkm.hp <= 0.0:
-                        action = best_action
+                        action = best_active_action
+                        #print("only 1 agent pkm left alive not swapping")
                     else:
+                        # pkm to swap to is alive and opponent has more than 1 pkm
+                        # allow the swap
                         action = action + 3
+                        #print('swapping')
+
                 else:
                     # only one pkm left on opp team, so don't swap
-                    action = best_action
+                    #print("only one opp pkm left, choosing best active action")
+                    action = best_active_action
             else:
-                action = best_action
-
+                action = best_active_action
+        # print("action out is ", action)
+        # print("_______")
         return action
 
     def _get_best_active_damage_action(self, g: GameState):
@@ -351,30 +364,27 @@ class PkmBattleEnvWrapper(gym.Wrapper):
         obs_list.extend(obs_nibot_list)
 
         if obs_type != self.obs_type_simple:
-            # stores the best damage for each opp pkm to agent team. 4th value is a -1 if all not revaled
-            # all moves are revealed or not. seems unlikely all moves will be revealed
-            # I think these 12 values are likely not that useful
-            opp_dmg_to_agent_list = []
             # nibot best dmg for agent team against other revealed pkm
-            # 6 values
+            # get dmg to values for agent to non active opp pkm
+            # 6 values. 3 agent pkm and 2 opp pkm non active
             for party_index in range(len(opp_team.party)):
-                if opp_team.party[party_index].revealed:
+                if opp_team.party[party_index].fainted() or opp_team.party[party_index].hp <= 0:
+                    obs_nibot_non_active_list = [default_value_fainted] * 3
+                elif opp_team.party[party_index].revealed:
                     obs_nibot_non_active_list = self.obs_nibot.get_action(game_state, is_non_active_obs=True,
                         party_index=party_index)
-                    STOPPED HERE
-                    PKM is revealed but unsure what moves are
-                    need something like self.obs_nibot but only for revealed moves and puts -1 if all moves 
-                    are not revealed
-                    also a -1 at the end
                 else:
                     # not revealed, so populate the default values
                     obs_nibot_non_active_list = [default_value_not_revealed] * 3
-                    opp_dmg_to_agent_list.extend([default_value_not_revealed] * 4)
 
                 obs_list.extend(obs_nibot_non_active_list)
-                obs_list.extend(opp_dmg_to_agent_list)
 
-            # get active, will be revealed but some of the moves might be not revealed
+            # get dmg vales from non-active opp pkm to agent
+            # 9 values. 3 opp pkm and 3 agent pkm
+            opp_team_dmg_to_agent_team_list = self.obs_nibot.get_opp_dmg_to_agent(game_state,
+                default_value_fainted, default_value_not_revealed)
+
+            obs_list.extend(opp_team_dmg_to_agent_team_list)
 
             # # type chart match up for agent team against revealed opp team
             # # 9 values
@@ -772,6 +782,78 @@ class ObsFromNiBot(BattlePolicy):
         b[p] = 1
     
         return b
+    
+    def get_opp_dmg_to_agent(self, game_state, default_value_fainted, default_value_not_revealed):
+        '''
+        get dmg vales from non-active opp pkm to agent
+        9 values. 3 opp pkm and 3 agent pkm
+        '''
+        opp_team_dmg_to_agent_list = []
+
+        # will clip value from -1 to 1 elsewhere, want value to be scaled down a bit here
+        # scale damage by pkm_hp_max then by damage_scale_value
+        # ie without this value 960 damage would be 2.0 (480 max HP points), with this value is 2.0 / damage_scale_value
+        damage_scale_value = 2.4375 
+        pkm_hp_max = 480.
+        default_dmg_no_dmg_found = -19
+   
+        # Get weather condition
+        weather = game_state.weather.condition
+
+        # Get my Pokémon team
+        agent_team = game_state.teams[0]
+        agent_team_pkm_list = [agent_team.active] + agent_team.party
+
+        # Get opponent's team
+        opp_team = game_state.teams[1]
+        opp_team_pkm_list = [opp_team.active] + opp_team.party
+
+        # get best dmg for opp pkm to agent pkm
+        for opp_index, opp_pkm in enumerate(opp_team_pkm_list):
+            if opp_pkm.fainted() or opp_pkm.hp == 0.0:
+                opp_team_dmg_to_agent_list.extend([default_value_fainted] * 3)
+                continue
+            elif opp_pkm.revealed:
+                # pkm alive and revealed. see dmg done to agent pkm
+                for agent_index, agent_pkm in enumerate(agent_team_pkm_list):
+                    if opp_index == 0:
+                        opp_attack_stage = opp_team.stage[PkmStat.ATTACK]
+                    else:
+                        opp_attack_stage = 0.
+
+                    if agent_index == 0:
+                        agent_team_defense_stage = agent_team.stage[PkmStat.DEFENSE]
+                    else:
+                        agent_team_defense_stage = 0.
+
+                    best_move_dmg_for_pkm_to_pkm = default_dmg_no_dmg_found 
+
+                    for opp_move_index, opp_move in enumerate(opp_pkm.moves):
+                        damage = self._estimate_damage(
+                            opp_move.type, opp_pkm.type, opp_move.power, agent_pkm.type, opp_attack_stage,
+                            agent_team_defense_stage, weather)
+
+                        scaled_damage = (damage / pkm_hp_max) / damage_scale_value
+
+                        # Check if the current move has higher damage than the previous best move
+                        if scaled_damage > best_move_dmg_for_pkm_to_pkm:
+                            best_move_dmg_for_pkm_to_pkm = scaled_damage
+
+                    if best_move_dmg_for_pkm_to_pkm == default_dmg_no_dmg_found:
+                        opp_team_dmg_to_agent_list.append(default_value_not_revealed)
+                    else:
+                        opp_team_dmg_to_agent_list.append(best_move_dmg_for_pkm_to_pkm)
+            else:
+                # pkm not revealed, so populate the default values
+                opp_team_dmg_to_agent_list.extend([default_value_not_revealed] * 3)
+                continue
+
+        expected_num_obs = 9
+
+        if len(opp_team_dmg_to_agent_list) != expected_num_obs:
+            print(f"ObsNiBot dmg from opp list not {expected_num_obs} long. It is {len(opp_team_dmg_to_agent_list)} long")
+
+        return opp_team_dmg_to_agent_list
 
 
 class SimpleBot(BattlePolicy):
