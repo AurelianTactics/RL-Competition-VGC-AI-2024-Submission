@@ -308,11 +308,11 @@ def build_train_eval_loop(num_battles, is_eval, run_tag, time_int, action_dict_t
     print(winner_dict)
 
     if is_save:
-        save_object_as_pkl(action_state_results_dict , f'2v2_state_dict_results/{run_tag}_action_state_results_dict')
-        save_object_as_pkl(winner_dict, f'2v2_state_dict_results/{run_tag}_winner_dict')
+        save_object_as_pkl(action_state_results_dict , f'{run_tag}_action_state_results_dict')
+        save_object_as_pkl(winner_dict, f'{run_tag}_winner_dict')
 
         if is_eval:
-            save_object_as_pkl(pkm_env_action_dict, f'2v2_state_dict_results/{run_tag}_pkm_env_action_dict')
+            save_object_as_pkl(pkm_env_action_dict, f'{run_tag}_pkm_env_action_dict')
 
     return winner_dict, action_state_results_dict, pkm_env_action_dict
 
@@ -332,7 +332,7 @@ def add_results_state_list_to_action_dict(action_dict, state_list, agent_first_m
             move_key = agent_first_move_attack_key
         
         if state_key in action_dict:
-            if move_key in action_dict[state_key]:
+            if agent_first_move in action_dict[state_key]:
                 action_dict[state_key][move_key][sum_wins_key] += agent_win_int
                 action_dict[state_key][move_key][count_key] += 1
             else:
@@ -517,7 +517,6 @@ def save_object_as_pkl(object_to_save, save_tag):
     Save object a pickle file
     '''
     with open(f'{save_tag}.pickle', 'wb') as handle:
-        print("saving: ", save_tag)
         pickle.dump(object_to_save, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
