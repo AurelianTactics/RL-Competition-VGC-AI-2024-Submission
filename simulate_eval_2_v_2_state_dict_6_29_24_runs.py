@@ -1,23 +1,13 @@
 '''
 Sim 2 vs 2 games to create a state dict
 
-python simulate_eval_2_v_2_state_dict.py --run_id 0 --num_battles 12 --run_tag testcheckpoint --is_eval 0
+python simulate_eval_2_v_2_state_dict.py --run_id 0 --num_battles 10 --run_tag test --is_eval 0
 
 python simulate_eval_2_v_2_state_dict.py --run_id 0 --num_battles 4000000 --run_tag test --is_eval 0
 
 python simulate_eval_2_v_2_state_dict.py --run_id 1 --num_battles 1000000 --run_tag test1m --is_eval 0
 
-# eval run
-python simulate_eval_2_v_2_state_dict.py --run_id 1000 --num_battles 10000 --run_tag evalsmoke --is_eval 1 --eval_dict_path 2v2_state_dict_results\2v2_test_0_1719717878_action_state_results_dict.pickle
-
 working
-    num pkm on each side
-
-    something weird is going on with some state stuff and some swaps
-        I think dmg is coming from some un-accounted for source
-
-    DONE save every 1m iterations to chekcpoint
-
     TEST add hidden value that can go to state
         only hidden if pkm is still alive
     DONE add hidden randomizer that randomizes hidden at the beginning of the battle
@@ -114,21 +104,17 @@ optimize
     can combine state, best action and best dmg into one function
     maybe only call for state for first action. later actions just always attack
         stop storing states when only 1 pkm left maybe as always attacks at that point
-    when enough states in dict and is first move, just move to next simulation
 
-2v3 and 3v3
-    what size state
-    how to collapse the results down
-    how to code swap 1 and swap 2
-    in 3v3 can reset after 1 pkm faints, in 2v3 have to run til end to see how 1v3 and 3v1 work out
-        3v1 probably doesn't matter
 for prd
     need to consider revealed when estimating opp dmg
     need to clip the state to match 2v2 state
         ie when it is 2v2, clip the fainted pkm things to just show the 2v2
 
 Later
-    
+    2v3 and 2v3
+        what size state
+        how to collapse the results down
+        how to code swap 1 and swap 2
     unit tests
     better review
     more alg (think this through)
@@ -142,7 +128,6 @@ import time
 import math
 import pprint
 import pickle
-from scipy.stats import chi2_contingency
 
 
 from vgc.datatypes.Objects import PkmTeam, Pkm, GameState, Weather
@@ -168,20 +153,12 @@ def main(args):
     else:
         action_dict_to_copy = None
 
-    if is_eval and action_dict_to_copy is None:
-        print("Error: Eval mode but no dict to copy")
-        assert 1 == 0
-
     time_int = int(time.time())
     run_tag = "2v2_" + args.run_tag + '_' + str(run_id) + '_' + str(time_int)
 
     # execute the loop
     winner_dict, action_state_results_dict, pkm_env_action_dict = build_train_eval_loop(
         num_battles, is_eval, run_tag, time_int, action_dict_to_copy, is_save=True)
-
-    if is_eval:
-        pprint.pprint(winner_dict)
-        pprint.pprint(pkm_env_action_dict)
 
 
 def build_train_eval_loop(num_battles, is_eval, run_tag, time_int, action_dict_to_copy=None, is_save=True):
@@ -230,7 +207,6 @@ def build_train_eval_loop(num_battles, is_eval, run_tag, time_int, action_dict_t
         # initialize for each new battle
         is_first_move = True
         state_list = []
-        eval_last_state_key = tuple([-1])
 
         # opp can have 3 things revealed or not:
         # active moves, party hp, party moves
@@ -242,41 +218,21 @@ def build_train_eval_loop(num_battles, is_eval, run_tag, time_int, action_dict_t
         is_reveal_opp_party_hp = True
         is_reveal_opp_party_moves = True
 
-        if is_eval:
-            # reveal randomly by the combinations. some of these are obviously more likely than others
-            #if reveal_roll < 5./6.:
-            if reveal_roll < .5:
-                reveal_roll = np.random.rand()
-                if reveal_roll >= 4./6.:
-                    is_reveal_opp_active_moves = False
-                elif reveal_roll >= 3./6.:
-                    is_reveal_opp_party_moves = False
-                elif reveal_roll >= 2./6.:
-                    is_reveal_opp_party_hp = False
-                    is_reveal_opp_party_moves = False
-                elif reveal_roll >= 1./6.:
-                    is_reveal_opp_active_moves = False
-                    is_reveal_opp_party_moves = False
-                else:
-                    is_reveal_opp_active_moves = False
-                    is_reveal_opp_party_hp = False
-                    is_reveal_opp_party_moves = False
-        else:
-            if reveal_roll < .11:
-                if reveal_roll >= .075:
-                    is_reveal_opp_active_moves = False
-                elif reveal_roll >= .04:
-                    is_reveal_opp_party_moves = False
-                elif reveal_roll >= .025:
-                    is_reveal_opp_party_hp = False
-                    is_reveal_opp_party_moves = False
-                elif reveal_roll >= .01:
-                    is_reveal_opp_active_moves = False
-                    is_reveal_opp_party_moves = False
-                else:
-                    is_reveal_opp_active_moves = False
-                    is_reveal_opp_party_hp = False
-                    is_reveal_opp_party_moves = False
+        if reveal_roll < .11:
+            if reveal_roll >= .075:
+                is_reveal_opp_active_moves = False
+            elif reveal_roll >= .04:
+                is_reveal_opp_party_moves = False
+            elif reveal_roll >= .025:
+                is_reveal_opp_party_hp = False
+                is_reveal_opp_party_moves = False
+            elif reveal_roll >= .01:
+                is_reveal_opp_active_moves = False
+                is_reveal_opp_party_moves = False
+            else:
+                is_reveal_opp_active_moves = False
+                is_reveal_opp_party_hp = False
+                is_reveal_opp_party_moves = False
 
         # step through the game for each battle
         for episode_step in range(max_episode_steps):
@@ -312,35 +268,23 @@ def build_train_eval_loop(num_battles, is_eval, run_tag, time_int, action_dict_t
             state_list.append(state_key)
 
             if is_eval:
-                eval_current_state_key = copy.deepcopy(state_key)
+                print("Not yet implemented")
+                assert 1 == 0
+                # # only allow swaps under certain criteria, see above and think through
+                # is_alowed_to_use_dict = ...
+                # if is_allowed_to_use_dict:
+                #     # access dict, get statistics to see if allowed
+                #     pass
+                # else:
+                #     # continue to attack with best action
+                #     agent_pre_env_action = 0
 
-                # allow swaps if state has changed
-                # to do: add redundancy confirming num pkm on each side
-                if is_swap_allowed_last_current_state(eval_last_state_key, eval_current_state_key):
-                    
-                    # to do: maybe add this later. something weird is going on with some edge cases
-                    # if is_swap_allowed_symmetric_state(current_state, num_agent_pkm=2, num_opp_pkm=2):
-                    #     # don't allow swaps on symmetric states
-                    #     pass
-
-                    agent_pre_env_action, swap_win_rate_better_rate, is_use_p_value, is_swap_better, p_value = \
-                        get_chi_square_test_from_action_dict(
-                            action_lookup_dict, eval_current_state_key)
-
-                    # if agent_pre_env_action == 1:
-                    #     print(f"Testing: found a swap. win rate better : {swap_win_rate_better_rate:.3f} | P value {p_value:.5f}")
-                    
-                else:
-                    # don't swap if state is the same
-                    agent_pre_env_action = 0
-
+                # turn the agent action into an env action
                 agent_env_action, _ = turn_agent_action_into_env_action(agent_pre_env_action, game_state[0])
 
                 # store actions taken for debugging purposes
                 pkm_env_action_dict = add_action_to_pkm_env_action_dict(agent_env_action, pkm_env_action_dict, 0)
                 pkm_env_action_dict = add_action_to_pkm_env_action_dict(opp_action, pkm_env_action_dict, 1)
-
-                eval_last_state_key = copy.deepcopy(eval_current_state_key)
 
             # check that actions are valid
             check_that_actions_are_valid(agent_pre_env_action, agent_env_action, True, agent_team_best_damage_list)
@@ -370,10 +314,6 @@ def build_train_eval_loop(num_battles, is_eval, run_tag, time_int, action_dict_t
                 # end battle
                 break
 
-        if battle_idx % 1000000 == 0 and battle_idx > 0:
-            save_object_as_pkl(action_state_results_dict,
-                f'2v2_state_dict_results/{run_tag}_action_state_results_dict_checkpoint_{battle_idx}')
-
     end_time = time.time()
     print(f"Time to run {(end_time - start_time) / 60:.3f} minutes")
     print(f"Time to run {(end_time - start_time) / num_battles:.3f} seconds per battle")
@@ -382,7 +322,7 @@ def build_train_eval_loop(num_battles, is_eval, run_tag, time_int, action_dict_t
     print(winner_dict)
 
     if is_save:
-        save_object_as_pkl(action_state_results_dict, f'2v2_state_dict_results/{run_tag}_action_state_results_dict')
+        save_object_as_pkl(action_state_results_dict , f'2v2_state_dict_results/{run_tag}_action_state_results_dict')
         save_object_as_pkl(winner_dict, f'2v2_state_dict_results/{run_tag}_winner_dict')
 
         if is_eval:
@@ -727,161 +667,6 @@ def add_action_to_pkm_env_action_dict(env_action, my_dict, team_key):
         my_dict[team_key][env_action] = 1
 
     return my_dict
-
-# Eval Section Functions
-def get_chi_square_test_from_action_dict(
-    action_dict,
-    state_key,
-    min_total_count=100,
-    min_swap_count=50,
-    min_attack_count=50,
-    swap_key='swap', attack_key='attack',
-    sum_wins_key='sum_wins', count_key='count',
-    is_print_statistics=False):
-
-    attack_action = 0
-    swap_party_zero_action = 1
-    swap_party_one_action = 2
-
-    is_use_p_value = False
-    is_swap_better = False
-    p_value = None
-    swap_win_rate_better_rate = 0.
-    recommended_action = attack_action
-
-    try:
-        if state_key in action_dict:
-
-            if swap_key in action_dict[state_key] and attack_key in action_dict[state_key]:
-                swap_wins = action_dict[state_key][swap_key][sum_wins_key]
-                swap_count = action_dict[state_key][swap_key][count_key]
-                attack_wins = action_dict[state_key][attack_key][sum_wins_key]
-                attack_count = action_dict[state_key][attack_key][count_key]
-
-                total_count = swap_count + attack_count
-
-                if total_count > min_total_count and swap_count > min_swap_count and attack_count > min_attack_count:
-
-                    swap_win_percent = swap_wins / swap_count
-                    attack_win_percent = attack_wins / attack_count
-                    
-                    if swap_win_percent > attack_win_percent:
-                        is_swap_better = True
-                        swap_win_rate_better_rate = swap_win_percent - attack_win_percent
-                    else:
-                        is_swap_better = False
-                        swap_win_rate_better_rate = 0.
-
-                    # chi squared table breaks down if any 0 values
-                    # really should not have less than 5
-                    if attack_wins == attack_count:
-                        recommended_action = attack_action
-                        # choose attack as attack always wins
-                        if is_print_statistics:
-                            print("Attack always wins")
-                            print(f"Swap win rate: {swap_wins / swap_count:.3f} | Count {swap_count}")
-                            print(f"Attack win rate: {attack_wins / attack_count:.3f} | Count {attack_count}")
-                    elif swap_wins == swap_count:
-                        # choose swap
-                        is_use_p_value = True
-                        is_swap_better = True
-                        p_value = 0.
-                        recommended_action = swap_party_zero_action
-                        if is_print_statistics:
-                            print("swap always wins, choosing swap")
-                            print(f"Swap win rate: {swap_wins / swap_count:.3f} | Count {swap_count}")
-                            print(f"Attack win rate: {attack_wins / attack_count:.3f} | Count {attack_count}")
-                    elif swap_wins == 0:
-                        recommended_action = attack_action
-                        # swap always loses
-                        if is_print_statistics:
-                            print("Swap always loses")
-                            print(f"Swap win rate: {swap_wins / swap_count:.3f} | Count {swap_count}")
-                            print(f"Attack win rate: {attack_wins / attack_count:.3f} | Count {attack_count}")
-                    elif attack_wins == 0:
-                        # attack always loses and swap won at least once so choose swap
-                        is_use_p_value = True
-                        is_swap_better = True
-                        p_value = 0.
-                        recommended_action = swap_party_zero_action
-                        if is_print_statistics:
-                            print("Attack always loses, choosing swap ")
-                            print(f"Swap win rate: {swap_wins / swap_count:.3f} | Count {swap_count}")
-                            print(f"Attack win rate: {attack_wins / attack_count:.3f} | Count {attack_count}")
-                    else:
-                        contingency_table = [[swap_wins, swap_count - swap_wins], [attack_wins, attack_count - attack_wins]]
-                        chi2, p_value, dof, expected = chi2_contingency(contingency_table)
-                        is_use_p_value = True
-
-                        if is_swap_better:
-                            if p_value < 0.25:
-                                recommended_action = swap_party_zero_action
-                            elif swap_win_rate_better_rate >= .1:
-                                recommended_action = swap_party_zero_action
-                            elif swap_win_rate_better_rate >= .05 and p_value < .6:
-                                recommended_action = swap_party_zero_action
-
-                        if is_print_statistics:
-                            #print(f'Swap Win : { win_loss_draw1[0] / sum(win_loss_draw1):.3f}')
-                            print(f"Swap win rate: {swap_wins / swap_count:.3f} | Count {swap_count}")
-                            print(f"Attack win rate: {attack_wins / attack_count:.3f} | Count {attack_count}")
-                            print(f'Chi-square statistic: {chi2:.3f}')
-                            print(f'P-value: {p_value:.5f}')
-
-        else:
-            is_use_p_value = False
-            is_swap_better = False
-            p_value = None
-            swap_win_rate_better_rate = 0.
-            recommended_action = attack_action
-    except Exception as e:
-        print("Error: in chi square test ", str(e) )
-        is_use_p_value = False
-        is_swap_better = False
-        p_value = None
-        swap_win_rate_better_rate = 0.
-        recommended_action = attack_action
-    
-    return recommended_action, swap_win_rate_better_rate, is_use_p_value, is_swap_better, p_value
-
-def is_swap_allowed_last_current_state(last_state, current_state):
-    '''
-    If swap is the same for last stae and current state, don't swap as would ahve checked last state
-    '''
-    if last_state == current_state:
-        return False
-    else:
-        return True
-
-
-def is_swap_allowed_symmetric_state(current_state, num_agent_pkm, num_opp_pkm):
-    '''
-    Do not allow swaps if the result would mean the same state
-    '''
-
-    if num_agent_pkm == 2 and num_opp_pkm == 2:
-        # 8 keys
-        # agent active to opp active
-        # agent active to opp party
-        # agent party to opp active
-        # agent party to opp party
-        # opp active to agent active
-        # opp active to agent party
-        # opp party to agent active
-        # opp party to agent party
-        # if a swap occurs
-        #   index 0 becomes index 2 and index 1 becomes index 3
-        #   index 4 becomes index 5 and index 6 becomes index 7
-
-        if current_state[0] == current_state[2] and current_state[1] == current_state[3] \
-            and current_state[4] == current_state[5] and current_state[6] == current_state[7]:
-            print("Testing: same state, swap not allowed")
-            return False
-        else:
-            return True
-
-    return True
-
 
 
 if __name__ == '__main__':
