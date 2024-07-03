@@ -3,92 +3,26 @@ Sim 3v3, 2v2, or 2v3 games to create a state dict
 
 Can also evaluate the state dict
 
-python simulate_eval_3_v_3_state_dict.py --agent_team_size 2 --opp_team_size 2 --run_id 10 --num_battles 12 --run_tag 3v3test --is_eval 0
+python simulate_eval_3v3_6_30_24.py --agent_team_size 2 --opp_team_size 2 --run_id 10 --num_battles 12 --run_tag 2v2smtest --is_eval 0
+python simulate_eval_3v3_6_30_24.py --agent_team_size 2 --opp_team_size 3 --run_id 10 --num_battles 12 --run_tag 2v3smtest --is_eval 0
+python simulate_eval_3v3_6_30_24.py --agent_team_size 3 --opp_team_size 2 --run_id 10 --num_battles 12 --run_tag 3v2smtest --is_eval 0
+python simulate_eval_3v3_6_30_24.py --agent_team_size 3 --opp_team_size 3 --run_id 10 --num_battles 12 --run_tag 3v3smtest --is_eval 0
 
+can use ; to seperate for multipler uns
 
 # eval run
-prior
+prior obsolete
 python simulate_eval_2_v_2_state_dict.py --agent_team_size 2 --opp_team_size 2 --run_id 1000 --num_battles 10000 --run_tag evalsmoke --is_eval 1 --eval_dict_path 2v2_state_dict_results\2v2_test_0_1719717878_action_state_results_dict.pickle
 
 working
-    
-    TEST works with 2v2 and 3v3
-        TEST need to store the 2v3 and 3v2 results differently
-            for the collapse to 2v2 need to store that in similar way to 3v3
-            for the ones that run to the end, need to store the wins and counts
-
-        TEST need to do the state stuff
-            STOPPED HERE
-            MEH TOO MANY STATES hp normalized ttf
-            TEST hp normalized
-            DONE with the new revealed or not
-
-        DONE the 3v3 action dict addition
-            DONE write the draft of this code
-            review this again, getting a bit tired
-
-        TEST the new add_rsults for non 3v3
-
-        TEST add stuff for num pkm on each side
-
-        MEH need sub directory for savings based on tag then num pkm
-        TEST args for num pkm
+    launch 2v2, 2v3, 3v2, and 3v3 1m runs
+        DONE see how the performance is
+            can launch like 6 comformtably, 8 is pushing it in this heat
+            so thinking like run 6 for extended period. the 3v2 and 2v3 just run one
         
-        MEH what size state? shoudl I collapse 2v3 and 3v3 down?
-        TEST how to handle the reveal rolls
-        TEST IN ACTION ROLL how to code swap 1 and swap 2
-        TEST in 3v3 can reset after 1 pkm faints, in 2v3 have to run til end to see how 1v3 and 3v1 work out
-            3v1 probably doesn't matter
-    
-    TEST if 10k in a state and at elast 1k of each action, then can continue
+    DONE check that the dicts look fine
 
-
-    DONE LOOKS FINE test actual dmg done vs the function
-        look through the env code to see if missing anything
-        should be easy enough. do a ubnch of new envs and resets, attack from both sides and see if the dmg is as expected
-            maybe randomize the moves as well and account for hp norm
-        working through it. need to test further
-
-    TEST could sort the party pkm but gets a little complicated
-        would reduce states by half. shame that not an ID for this
-
-        TEST can sort the knowns
-            could make one by doing power and type concat and then sort the list for active and for party
-                gets complicated as hell for the active party and the action though
-                maybe it works fine as long as the sort works the same way? would get hte same state
-
-        DONE THIS NEVER OCCURS WHERE IT MATTERS could move fainted to the end
-            for agent team, can do that in the loop
-                maybe do the list differently
-                but would need to account for the action
-                    maybe just account for that in prd
-                would never do thea gent fainted in 3v3 or 2v2 (where it matters) or 2v3 where it matters
-                for opp team, also wouldn't have it where it matters
-
-        could move unknown to the end
-            for agent team active never occurs but passive might
-            could just make the state space for hidden and reveal symmetric
-                then at prod time would organize it that way
-                could get tricky but leaning towards this
-
-
-    review
-        think through the hidden and not part again. effing A that is confusing
-
-    smoke test
-        2v2
-        2v3
-        3v2
-        3v3
-    step through
-        2v2
-        2v3
-        3v2
-        3v3
-
-    test and look through this again, so tired
-
-
+    if no issues can then launch way more
 
 
 to do
@@ -139,6 +73,7 @@ import math
 import pprint
 import pickle
 from scipy.stats import chi2_contingency
+import os
 
 
 from vgc.datatypes.Objects import PkmTeam, Pkm, GameState, Weather
@@ -171,7 +106,7 @@ def main(args):
         assert 1 == 0
 
     time_int = int(time.time())
-    run_tag = f"{agent_team_size}_v_{opp_team_size}" + args.run_tag + '_' + str(run_id) + '_' + str(time_int)
+    run_tag = f"{agent_team_size}v{opp_team_size}_" + args.run_tag + '_' + str(run_id) + '_' + str(time_int)
 
     # execute the loop
     winner_dict, action_state_results_dict, pkm_env_action_dict = build_train_eval_loop(
@@ -241,6 +176,7 @@ def build_train_eval_loop(
 
     max_episode_steps = 250
     agent_index = 0
+    checkpoint_counter = 0
     start_time = time.time()
 
     for battle_idx in range(num_battles):
@@ -434,19 +370,31 @@ def build_train_eval_loop(
                     agent_win_int = 0
 
                 if is_3v3_battle:
+                    if winner != -1:
+                        print("Error: 3v3 battle but winner is not -1")
+
                     action_state_results_dict = add_3v3_results_state_list_to_action_dict(
                         action_state_results_dict, state_list, agent_first_move,
                         agent_first_move_attack_key, action_dict_count_key)
+
                 elif is_3v2_or_2v3_battle:
                     if is_terminated_due_to_2v2:
+                        if winner != -1:
+                            print("Error: 2v3 collapsing to 2v2 battle but winner is not -1")
+
                         action_state_results_dict = add_3v3_results_state_list_to_action_dict(
                             action_state_results_dict, state_list, agent_first_move,
                             agent_first_move_attack_key, action_dict_count_key)
+
                     else:
+
+                        if winner == -1 and episode_step < max_episode_steps - 1:
+                            print("Error: 1v3 collapsing but no winner")
+                        
                         action_state_results_dict = add_results_state_list_to_action_dict(
                             action_state_results_dict, state_list, agent_first_move, agent_win_int,
                             agent_first_move_attack_key, action_dict_count_key)
-                        
+ 
                 else:
                     action_state_results_dict = add_results_state_list_to_action_dict(
                         action_state_results_dict, state_list, agent_first_move, agent_win_int,
@@ -458,8 +406,11 @@ def build_train_eval_loop(
                 break
 
         if battle_idx % 1000000 == 0 and battle_idx > 0:
+            checkpoint_counter += 1
+            # never save more than 2 checkpoints
+            checkpoint_save_int = checkpoint_counter % 2
             save_object_as_pkl(action_state_results_dict,
-                f'3v3_results/{run_tag}_action_state_results_dict_checkpoint_{battle_idx}')
+                f'3v3_results/{run_tag}_action_state_results_dict_checkpoint_{checkpoint_save_int}')
 
     end_time = time.time()
     print(f"Time to run {(end_time - start_time) / 60:.3f} minutes")
@@ -584,18 +535,25 @@ def get_sorted_team_list(agent_team, opp_team, agent_pkm_sort_list, opp_pkm_sort
     '''
     Get sorted team list
     '''
-    if agent_pkm_sort_list[0] > agent_pkm_sort_list[1]:
-        agent_party_list = [agent_team.party[1], agent_team.party[0]]
+ 
+    if len(agent_team.party) == 1:
+        agent_party_list = [agent_team.party[0]]
     else:
-        agent_party_list = [agent_team.party[0], agent_team.party[1]]
+        if agent_pkm_sort_list[0] > agent_pkm_sort_list[1]:
+            agent_party_list = [agent_team.party[1], agent_team.party[0]]
+        else:
+            agent_party_list = [agent_team.party[0], agent_team.party[1]]
 
-    if is_reveal_opp_party_0_moves and is_reveal_opp_party_1_moves:
-        if opp_pkm_sort_list[0] > opp_pkm_sort_list[1]:
-            opp_party_list = [opp_team.party[1], opp_team.party[0]]
+    if len(opp_team.party) == 1:
+        opp_party_list = [opp_team.party[0]]
+    else:
+        if is_reveal_opp_party_0_moves and is_reveal_opp_party_1_moves:
+            if opp_pkm_sort_list[0] > opp_pkm_sort_list[1]:
+                opp_party_list = [opp_team.party[1], opp_team.party[0]]
+            else:
+                opp_party_list = [opp_team.party[0], opp_team.party[1]]
         else:
             opp_party_list = [opp_team.party[0], opp_team.party[1]]
-    else:
-        opp_party_list = [opp_team.party[0], opp_team.party[1]]
 
     return agent_party_list, opp_party_list
 
@@ -747,49 +705,6 @@ def get_turns_to_faint_list(
     return turns_to_faint_list, normalize_hp_list
 
 
-### HP
-# {120.0: 3779517,
-#  156.0: 3378332,
-#  192.0: 2453402,
-#  228.0: 1692512,
-#  264.0: 1144966,
-#  300.0: 758680,
-#  336.0: 484424,
-#  372.0: 296296,
-#  408.0: 164303,
-#  444.0: 75229,
-#  480.0: 22651}
-### TTF
-#   {1: 5694845,
-#  2: 1948930,
-#  3: 268534,
-#  4: 61252,
-#  5: 13357,
-#  6: 7598,
-#  7: 2896,
-#  8: 1173,
-#  9: 498,
-#  10: 381,
-#  11: 128,
-#  12: 136,
-#  13: 99,
-#  14: 50,
-#  15: 20,
-#  16: 19,
-#  17: 5,
-#  18: 13,
-#  19: 2,
-#  20: 7,
-#  22: 2,
-#  23: 3,
-#  25: 1,
-#  28: 1,
-#  30: 2,
-#  100: 48}
-# print(turns_to_faint_list)
-# print(best_damage_list)
-# print(hp_list)
-
 def load_pkl_object(pkl_path):
     '''
     Load a pickle object
@@ -802,19 +717,25 @@ def save_object_as_pkl(object_to_save, save_tag):
     '''
     Save object a pickle file
     '''
-    save_path = f'{save_tag}.pickle'
+    save_filename = f'{save_tag}.pickle'
+    save_path = os.path.join('G:\\', '3v3_vgc_saves', save_filename)
+
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
     with open(save_path, 'wb') as handle:
         print("saving: ", save_path)
         pickle.dump(object_to_save, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 def check_that_actions_are_valid(pre_env_action, env_action, is_agent, best_damage_list):
-    if pre_env_action == 1 and env_action != 4:
-        print("Error pre env action is 1 but env action is not 4 ")
+    if pre_env_action == 1:
+        if env_action != 4:
+            print("Error pre env action is 1 but env action is not 4 ")
         if not is_agent:
             print("Error opp pre_env action is not always 0")
-    elif pre_env_action == 2 and env_action != 5:
-        print("Error pre env action is 2 but env action is not 5 ")
+    elif pre_env_action == 2:
+        if env_action != 5:
+            print("Error pre env action is 2 but env action is not 5 ")
         if not is_agent:
             print("Error opp pre_env action is not always 0")
     elif pre_env_action == 0:
@@ -837,7 +758,7 @@ def turn_agent_action_into_env_action(action, agent_game_state):
     2: switch to second pkm
 
     Env actions are
-    0 to 3: action of active pokm
+    0 to 3: action of active pkm
     4: switch to first pkm
     5: switch to second pkm
     '''
@@ -973,6 +894,9 @@ def get_reveal_roll_results(agent_team_size, opp_team_size, is_eval):
 
         if opp_team_size == 2:
             # unknowns should always be at the end
+            # will know at least one opp active move but acting
+            # like it can be hidden due to possibility of better move
+            # coming next turn
 
             if reveal_roll < .14:
                 if reveal_roll >= .1:
@@ -990,6 +914,9 @@ def get_reveal_roll_results(agent_team_size, opp_team_size, is_eval):
                     is_reveal_opp_party_0_hp = False
                     is_reveal_opp_party_0_moves = False
         elif opp_team_size == 3:
+            # makes sense to weight differently due to more possible states
+            # in some cases but odds of more stuff being revealed are unlikely in prd
+
             # don't think it is possible for a move to be revealed but not the hp
             # unknowns should always be at the end
             # in prd will sort it that way
@@ -1012,38 +939,38 @@ def get_reveal_roll_results(agent_team_size, opp_team_size, is_eval):
             #         is_reveal_opp_active_moves = False
             #         is_reveal_opp_party_0_moves = False
 
-            if reveal_roll < .33:
+            if reveal_roll < .63:
 
-                if reveal_roll >= .29:
+                if reveal_roll >= .56:
                     # party 1 completely hidden
                     is_reveal_opp_party_1_hp = False
                     is_reveal_opp_party_1_moves = False
-                elif reveal_roll >= .25:
+                elif reveal_roll >= .49:
                     # party 0 and party 1 completely hidden
                     is_reveal_opp_party_0_hp = False
                     is_reveal_opp_party_0_moves = False
                     is_reveal_opp_party_1_hp = False
                     is_reveal_opp_party_1_moves = False
-                elif reveal_roll >= .22:
+                elif reveal_roll >= .42:
                     # party 1 completely hidden and active moves hidden
                     is_reveal_opp_active_moves = False
                     is_reveal_opp_party_1_hp = False
                     is_reveal_opp_party_1_moves = False
-                elif reveal_roll >= .18:
+                elif reveal_roll >= .35:
                     # only actives moves are hidden
                     is_reveal_opp_active_moves = False
-                elif reveal_roll >= .14:
+                elif reveal_roll >= .28:
                     # only party 1 moves hidden
                     is_reveal_opp_party_1_moves = False
-                elif reveal_roll >= .10:
+                elif reveal_roll >= .21:
                     # party moves are hidden
                     is_reveal_opp_party_0_moves = False
                     is_reveal_opp_party_1_moves = False
-                elif reveal_roll >= .06:
+                elif reveal_roll >= .14:
                     # active and party 1 moves hidden
                     is_reveal_opp_active_moves = False
                     is_reveal_opp_party_1_moves = False
-                elif reveal_roll >= .03:
+                elif reveal_roll >= .07:
                     # all moves hidden, all hp known
                     is_reveal_opp_active_moves = False
                     is_reveal_opp_party_0_moves = False
@@ -1057,9 +984,8 @@ def get_reveal_roll_results(agent_team_size, opp_team_size, is_eval):
                     is_reveal_opp_party_1_hp = False
 
             if agent_team_size == 2:
-                # must know opp active moves since one agent pkm has falled (presumably to an attack)
+                # must know opp active moves since one agent pkm has fallen (presumably to an attack)
                 is_reveal_opp_active_moves = True
-        
 
     return is_reveal_opp_active_moves, is_reveal_opp_party_0_moves, is_reveal_opp_party_1_moves,\
         is_reveal_opp_party_0_hp, is_reveal_opp_party_1_hp
@@ -1088,17 +1014,24 @@ def get_pkm_id_sort_list(team_party_list):
     pkm_id_list = []
     pkm_sort_list = []
 
-    for i, pkm in enumerate(team_party_list):
-        pkm_id = ''
-        for j, move in enumerate(pkm.moves):
-            pkm_id += str(move.type) + str(move.power)
+    if len(team_party_list) == 2:
+        if team_party_list[0].max_hp > team_party_list[1].max_hp:
+            pkm_sort_list = [0, 1]
+        elif team_party_list[0].max_hp < team_party_list[1].max_hp:
+            pkm_sort_list = [1, 0]
+        else:
+            # hp is equal, sort by move differences
+            for i, pkm in enumerate(team_party_list):
+                pkm_id = ''
+                for j, move in enumerate(pkm.moves):
+                    pkm_id += str(move.type) + str(move.power)
 
-        pkm_id_list.append(pkm_id)
+                pkm_id_list.append(pkm_id)
 
-    if pkm_id_list[0] > pkm_id_list[1]:
-        pkm_sort_list = [1, 0]
-    else:
-        pkm_sort_list = [0, 1]
+            if pkm_id_list[0] > pkm_id_list[1]:
+                pkm_sort_list = [1, 0]
+            else:
+                pkm_sort_list = [0, 1]
 
     return pkm_sort_list, pkm_id_list
 
