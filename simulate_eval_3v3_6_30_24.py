@@ -209,7 +209,7 @@ def build_train_eval_loop(
                 first_move_roll = np.random.rand()
 
                 if agent_team_size == 2:
-                    if first_move_roll < 0.5:
+                    if first_move_roll < 0.2:
                         agent_pre_env_action = 0
                         agent_first_move = agent_first_move_attack_key
                     else:
