@@ -5,9 +5,10 @@ Given a game state, the bot will return an action to take in the game.
 
 working:
 
-DONE smoke test
-
 review the code
+    could be reason for weak performance
+        did I filter the state correctly?
+    how i buildt the 2v2 dict might be borked. i borked the 2v3 dict
 
 see how it performs in a simple eval loop
     DONE against random
@@ -15,18 +16,38 @@ see how it performs in a simple eval loop
     against itself
     DONE against simplebot
 
-confirm it works in the competition format
+DONE confirm it works in the competition format
 
 confirm the 2v2 state look up and swap is working properly
+    check some individual states tos ee if they make sense
+    only log the results of when the swap is occuring and see win rate
+        though could be biased in favor of bad results
     confirm the swap is actually happening
     maybe log the win % of both actions at the time and the result of the action
     print out the state and then what happened next? maybe the states until the end of hte match?
+    maybe be more restrictive on the p values?
+        for some reason not working as well as expected
+    
 
-2v3 dict
-    join
-    evalue
-3v2 dict
-3v3 dict
+join dicts
+    DONE 2v3 dict
+    3v2 dict
+    3v3 dict
+
+evaluate dicts
+    2v3 dict
+    3v2 dict
+    3v3 dict
+
+implement
+    2v3 dict
+    3v2 dict
+    3v3 dict
+
+Clean up for prod
+    this file in submission
+    dicts to load in submission
+    remove all my debugging and print statements
 
 To do:
 current and last state key check maybe
@@ -43,12 +64,14 @@ from vgc.datatypes.Types import PkmStat, PkmType, WeatherCondition, \
     N_TYPES, N_STATUS, N_STATS, N_ENTRY_HAZARD, N_WEATHER, PkmStatus, PkmEntryHazard
 
 
-
 class PequilBot(BattlePolicy):
     '''
     '''
     def __init__(self):
-        self.two_vs_two_dict = load_pkl_object('two_vs_two_dict.pkl')
+        self.two_vs_two_dict = self._load_pkl_object('two_vs_two_dict.pkl')
+        self.two_vs_three_dict = None
+        self.three_vs_two_dict = None
+        self.three_vs_three_dict = None
 
         self.recommended_action_key = 'recommended_action'
 
@@ -69,7 +92,7 @@ class PequilBot(BattlePolicy):
             if one on either side
         TEST get best dmg action
 
-        get ttf state
+        TEST get ttf state
             making state the same way might be a bit tricky
             sorting
                 double check this. I am seeing some states in 2v2 dict that should not exist
@@ -79,35 +102,55 @@ class PequilBot(BattlePolicy):
                 unknown moves
                     assume if one move known then use TTF
             chekc notes again
-        swap 0 and 1 for the 3v2 and 3v3 is complicated
+        TEST swap 0 and 1 for the 3v2 and 3v3 is complicated
+
+        to do:
+        teha gent fainted and opp fainted list should be pulled after the party is reordered
+        i think i need to sort some revealed and some not revealed stuff to be more like data collected dict
         '''
         #print("in get action -1")
         try:
-            num_agent_pkm_non_fainted, agent_fainted_list = self._get_num_non_fainted_pokemon(game_state.teams[0])
-            num_opponent_pkm_non_fainted, opp_fainted_list = self._get_num_non_fainted_pokemon(game_state.teams[1])
             #print("in get action -0.5")
             best_active_action, _ = self._get_best_active_damage_action(game_state)
             #print("in get action -0.4")
             try:
-                if num_agent_pkm_non_fainted == 1 or num_opponent_pkm_non_fainted == 1:
+                num_agent_pkm_non_fainted, agent_fainted_list = self._get_num_non_fainted_pokemon(game_state.teams[0])
+                num_opponent_pkm_non_fainted, opp_fainted_list = self._get_num_non_fainted_pokemon(game_state.teams[1])
+
+                if num_agent_pkm_non_fainted <= 1 or num_opponent_pkm_non_fainted <= 1:
                     action = best_active_action
                 elif num_agent_pkm_non_fainted >= 2 and num_opponent_pkm_non_fainted >= 2:
+    
                     action = best_active_action
                     #print("in get action -0.3")
                     # get opp pkm hp and move revealed status
+                    # this is not sorted. values used below are either sorting ambivalient or sorted before usage
                     is_reveal_opp_active_hp, is_reveal_opp_active_moves, \
                     is_reveal_opp_party_0_hp, is_reveal_opp_party_0_moves, \
                     is_reveal_opp_party_1_hp, is_reveal_opp_party_1_moves, = self._get_opp_pkm_reveal_status(game_state)
                     #print("in get action -0.25")
                     # get the state
                     agent_pkm_party_sort_list, _ = self._get_pkm_id_sort_list(game_state.teams[0].party)
+                    if agent_pkm_party_sort_list[0] == 1:
+                        # re-sort the agent fainted list
+                        temp_value = agent_fainted_list[1]
+                        agent_fainted_list[1] = agent_fainted_list[2]
+                        agent_fainted_list[2] = temp_value
                     #print("in get action -0.2")
                     if is_reveal_opp_party_0_hp and is_reveal_opp_party_0_moves and is_reveal_opp_party_1_hp and is_reveal_opp_party_1_moves:
                         opp_pkm_party_sort_list, _ = self._get_pkm_id_sort_list(game_state.teams[1].party)
                         is_sort_opp_party = True
+                        if opp_pkm_party_sort_list[0] == 1:
+                            # re-sort the opp fainted list
+                            temp_value = opp_fainted_list[1]
+                            opp_fainted_list[1] = opp_fainted_list[2]
+                            opp_fainted_list[2] = temp_value
+                            # sort the opp_hp_normalize_reveal_list
+                            opp_hp_normalizer_reveal_list = [is_reveal_opp_active_hp, is_reveal_opp_party_1_hp, is_reveal_opp_party_0_hp,]
                     else:
                         opp_pkm_party_sort_list = [0, 1]
                         is_sort_opp_party = False
+                        opp_hp_normalizer_reveal_list = [is_reveal_opp_active_hp, is_reveal_opp_party_0_hp, is_reveal_opp_party_1_hp]
                     #print("in get action -0.1")
                     agent_sorted_party_list, opp_sorted_party_list = self._get_sorted_team_list(
                         game_state.teams[0], game_state.teams[1],
@@ -121,11 +164,11 @@ class PequilBot(BattlePolicy):
                         agent_sorted_party_list,
                         opp_sorted_party_list,
                         hp_normalizer_reveal_list=[True, True, True],
-                        is_reveal_team_1_active_moves=True,
-                        is_reveal_team_1_party_0_moves=True,
-                        is_reveal_team_1_party_1_moves=True,
-                        is_reveal_team_2_party_0_hp=is_reveal_opp_party_0_hp,
-                        is_reveal_team_2_party_1_hp=is_reveal_opp_party_1_hp,
+                        # is_reveal_team_1_active_moves=True,
+                        # is_reveal_team_1_party_0_moves=True,
+                        # is_reveal_team_1_party_1_moves=True,
+                        # is_reveal_team_2_party_0_hp=is_reveal_opp_party_0_hp,
+                        # is_reveal_team_2_party_1_hp=is_reveal_opp_party_1_hp,
                         is_agent_team_1=True)
 
                     state_list_opp, opp_normalize_hp_list = self._get_state_key_list(
@@ -133,16 +176,15 @@ class PequilBot(BattlePolicy):
                         self.max_ttf_value,
                         opp_sorted_party_list,
                         agent_sorted_party_list,
-                        hp_normalizer_reveal_list=[is_reveal_opp_active_hp, is_reveal_opp_party_0_hp, is_reveal_opp_party_1_hp],
-                        is_reveal_team_1_active_moves=is_reveal_opp_active_moves,
-                        is_reveal_team_1_party_0_moves=is_reveal_opp_party_0_moves,
-                        is_reveal_team_1_party_1_moves=is_reveal_opp_party_1_moves,
-                        is_reveal_team_2_party_0_hp=True,
-                        is_reveal_team_2_party_1_hp=True,
+                        hp_normalizer_reveal_list=opp_hp_normalizer_reveal_list,
+                        # is_reveal_team_1_active_moves=is_reveal_opp_active_moves,
+                        # is_reveal_team_1_party_0_moves=is_reveal_opp_party_0_moves,
+                        # is_reveal_team_1_party_1_moves=is_reveal_opp_party_1_moves,
+                        # is_reveal_team_2_party_0_hp=True,
+                        # is_reveal_team_2_party_1_hp=True,
                         is_agent_team_1=False)
                     #print("debug after state 1")
-                    if len(agent_fainted_list) == 3 and len(opp_fainted_list) == 3 \
-                        and len(state_list_agent) == 9 and len(state_list_opp) == 9 \
+                    if len(state_list_agent) == 9 and len(state_list_opp) == 9 \
                         and len(agent_normalize_hp_list) == 3 and len(opp_normalize_hp_list) == 3:
 
                         if num_agent_pkm_non_fainted == 2 and num_opponent_pkm_non_fainted == 2:
@@ -192,9 +234,12 @@ class PequilBot(BattlePolicy):
 
                             state_key = tuple(filtered_state_list_agent + filtered_state_list_opp 
                                             + filtered_agent_normalize_hp_list + filtered_opp_normalize_hp_list)
-                            
+                            # print(state_key)
+                            # test_state_key = tuple(state_list_agent + state_list_opp + agent_normalize_hp_list + opp_normalize_hp_list)
+                            # print(test_state_key)
+
                             if len(state_key) != 12:
-                                print("Error: state key length is not as expected")
+                                print("Error: state key length is not as expected 2v2")
 
                             if state_key in self.two_vs_two_dict:
                                 #print("state key in the dict")
@@ -203,11 +248,83 @@ class PequilBot(BattlePolicy):
                                 if recommended_action != 0:
                                     action = self._turn_agent_action_into_env_action(game_state, 
                                         recommended_action, best_active_action, is_allow_fuzzy_swap=True)
-                                    #print(f"Testing, recommending a swap {action}, recommended action {recommended_action}")
-                                    #print(state_key, self.two_vs_two_dict[state_key])
+                                    print(f"Testing, recommending a swap {action}, recommended action {recommended_action}")
+                                    print(state_key, self.two_vs_two_dict[state_key])
+
+                        elif num_agent_pkm_non_fainted == 2 and num_opponent_pkm_non_fainted == 3:
+
+                            state_key = self._filter_state_list(state_list_agent, 
+                                            state_list_opp, agent_normalize_hp_list, opp_normalize_hp_list,
+                                            agent_fainted_list,
+                                            opp_fainted_list,
+                                            expected_len=17,
+                                            filter_type='2v3')
+                            
+                            if self.two_vs_three_dict is not None and state_key in self.two_vs_three_dict:
+                                recommended_action = self.two_vs_three_dict[state_key].get(self.recommended_action_key, 0)
+                                print("testing 2v3 grabbing from dict")
+                                if recommended_action != 0:
+                                    action = self._turn_agent_action_into_env_action(game_state, 
+                                        recommended_action, best_active_action, is_allow_fuzzy_swap=True)
+                                    print(f"Testing, recommending a swap 2v3 {action}, recommended action {recommended_action}")
+                                    print(state_key, self.two_vs_three_dict[state_key])
+                                    
+                        elif num_agent_pkm_non_fainted == 3 and num_opponent_pkm_non_fainted == 2:
+
+                            state_key = self._filter_state_list(state_list_agent, 
+                                            state_list_opp, agent_normalize_hp_list, opp_normalize_hp_list,
+                                            agent_fainted_list,
+                                            opp_fainted_list,
+                                            expected_len=17,
+                                            filter_type='3v2')
+
+                            if self.three_vs_two_dict is not None and state_key in self.three_vs_two_dict:
+                                recommended_action = self.three_vs_two_dict[state_key].get(self.recommended_action_key, 0)
+                                print("testing 3v2 grabbing from dict")
+                                if recommended_action != 0:
+                            
+                                    if agent_pkm_party_sort_list[0] == 1:
+                                        #swap the recommended action if the agent party has been flipped
+                                        if recommended_action == 1:
+                                            recommended_action = 2
+                                        elif recommended_action == 2:
+                                            recommended_action = 1
+
+                                    action = self._turn_agent_action_into_env_action(game_state, 
+                                        recommended_action, best_active_action, is_allow_fuzzy_swap=False)
+                                    print(f"Testing, recommending a swap 3v2 {action}, recommended action {recommended_action}")
+                                    print(state_key, self.three_vs_two_dict[state_key])
+                            
+                        elif num_agent_pkm_non_fainted == 3 and num_opponent_pkm_non_fainted == 3:
+                            # do not need to filter state key
+                            state_key = tuple(state_list_agent + state_list_opp + agent_normalize_hp_list + opp_normalize_hp_list)
+
+                            if len(state_key) != 24:
+                                print("Error: state key length is not as expected 3v3")
+
+                            if self.three_vs_three_dict is not None and state_key in self.three_vs_three_dict:
+                                recommended_action = self.three_vs_three_dict[state_key].get(self.recommended_action_key, 0)
+                                print("testing 3v3 grabbing from dict")
+                                if recommended_action != 0:
+                            
+                                    if agent_pkm_party_sort_list[0] == 1:
+                                        #swap the recommended action if the agent party has been flipped
+                                        if recommended_action == 1:
+                                            recommended_action = 2
+                                        elif recommended_action == 2:
+                                            recommended_action = 1
+
+                                    action = self._turn_agent_action_into_env_action(game_state, 
+                                        recommended_action, best_active_action, is_allow_fuzzy_swap=False)
+                                    print(f"Testing, recommending a swap 3v3 {action}, recommended action {recommended_action}")
+                                    print(state_key, self.three_vs_three_dict[state_key])
+                        else:
+                            print("Error should not reach here for num pkm")
+                            action = best_active_action
+
                     else:
                         print("Error: state length or fainted length is not as expected")
-
+                        action = best_active_action
                 else:
                     action = best_active_action
             except Exception as e:
@@ -236,11 +353,11 @@ class PequilBot(BattlePolicy):
         team_1_party_list,
         team_2_party_list,
         hp_normalizer_reveal_list,
-        is_reveal_team_1_active_moves,
-        is_reveal_team_1_party_0_moves,
-        is_reveal_team_1_party_1_moves,
-        is_reveal_team_2_party_0_hp,
-        is_reveal_team_2_party_1_hp,
+        # is_reveal_team_1_active_moves,
+        # is_reveal_team_1_party_0_moves,
+        # is_reveal_team_1_party_1_moves,
+        # is_reveal_team_2_party_0_hp,
+        # is_reveal_team_2_party_1_hp,
         is_agent_team_1):
         '''
         put in zero for the fainted
@@ -378,6 +495,21 @@ class PequilBot(BattlePolicy):
             else:
                 fainted_list.append(True)
 
+        if len(fainted_list) != 3:
+            print("Error: fainted list length is not as expected, setting to all fainted")
+            fainted_list = [True, True, True]
+            num_non_fainted_pkm = 0
+        else:
+            if fainted_list[0]:
+                print("Error: active pkm is fainted, setting to all fainted")
+                fainted_list = [True, True, True]
+                num_non_fainted_pkm = 0
+
+        if sum(fainted_list) != 3 - num_non_fainted_pkm:
+            print("Error: fainted list sum is not as expected, setting to all fainted")
+            fainted_list = [True, True, True]
+            num_non_fainted_pkm = 0
+
         return num_non_fainted_pkm, fainted_list
 
     
@@ -389,7 +521,7 @@ class PequilBot(BattlePolicy):
 
         # Get my Pokémon team
         my_team = g.teams[0]
-        my_pkms = [my_team.active] + my_team.party
+        my_pkms = [my_team.active] #+ my_team.party
 
         # Get opponent's team
         opp_team = g.teams[1]
@@ -462,6 +594,7 @@ class PequilBot(BattlePolicy):
         Reduce state size by sorting the pkm
         '''
         if len(team_party_list) <= 1:
+            print("Error party len is only 1 for sort")
             return [0, 1], ['0', '1']
         
         pkm_id_list = []
@@ -485,6 +618,9 @@ class PequilBot(BattlePolicy):
                     pkm_sort_list = [1, 0]
                 else:
                     pkm_sort_list = [0, 1]
+        else:
+            print("Error party len is not 2 for sort")
+            return [0, 1], ['0', '1']
 
         return pkm_sort_list, pkm_id_list
     
@@ -501,17 +637,22 @@ class PequilBot(BattlePolicy):
             is_reveal_opp_party_1_hp, is_reveal_opp_party_1_moves
     
 
-    def _get_pkm_reveal_status(self, pkm):
+    def _get_pkm_reveal_status(self, pkm, reveal_moves_threshold=4):
         '''
         Treating one move revealed like all moves are revealed
         '''
         is_reveal_hp = pkm.revealed
         is_reveal_moves = False
+        revealed_moves = 0
 
         for move in pkm.moves:
             if move.revealed:
-                is_reveal_moves = True
-                break
+                revealed_moves += 1
+                #is_reveal_moves = True
+                #break
+
+        if revealed_moves >= reveal_moves_threshold:
+            is_reveal_moves = True
 
         return is_reveal_hp, is_reveal_moves
         
@@ -602,9 +743,120 @@ class PequilBot(BattlePolicy):
         return action
 
 
-def load_pkl_object(pkl_path):
-    '''
-    Load a pickle object
-    '''
-    with open(pkl_path, 'rb') as handle:
-        return pickle.load(handle)
+    def _load_pkl_object(self, pkl_path):
+        '''
+        Load a pickle object
+        '''
+        with open(pkl_path, 'rb') as handle:
+            return pickle.load(handle)
+
+
+    def _filter_state_list(self,
+        state_list_agent, 
+        state_list_opp,
+        agent_normalize_hp_list,
+        opp_normalize_hp_list,
+        agent_fainted_list,
+        opp_fainted_list,
+        expected_len,
+        filter_type):
+
+        # get the fainted pkm
+        # check the list while it is created
+        
+        agent_state_filter_list = [True, True, True,
+                                       True, True, True,
+                                       True, True, True]
+        opp_state_filter_list = [True, True, True,
+                                    True, True, True,
+                                    True, True, True]
+        agent_norm_filter_list = [True, True, True]
+        opp_norm_filter_list = [True, True, True]
+
+        if filter_type == '2v3':
+            if agent_fainted_list[1]:
+                agent_state_filter_list = [True, True, True,
+                                       False, False, False,
+                                       True, True, True]
+                opp_state_filter_list = [True, False, True,
+                                        True, False, True,
+                                        True, False, True]
+                agent_norm_filter_list = [True, False, True]
+                opp_norm_filter_list = [True, True, True]
+            elif agent_fainted_list[2]:
+                agent_state_filter_list = [True, True, True,
+                                       True, True, True,
+                                       False, False, False]
+                opp_state_filter_list = [True, True, False,
+                                            True, True, False,
+                                            True, True, False]
+                agent_norm_filter_list = [True, True, False]
+                opp_norm_filter_list = [True, True, True]
+            else:
+                print("Error: messed up 2v3 state in filter_state_list")
+            # idx 0,1,2 are active attacking opp pkm
+            # idx 3,4,5 are party attacking party pkm
+            # idx 6,7 are opp active attacking agent
+            # idx 8,9 are party 0 active attacking agent
+            # idx 10,11 are party 1 active attacking agent
+            # idx 12, 13, are agent hp normalized
+            # idx 14,15,16 are opp hp normalized
+        elif filter_type == '3v2':
+            if opp_fainted_list[1]:
+                agent_state_filter_list = [True, False, True,
+                                       True, False, True,
+                                       True, False, True]
+                opp_state_filter_list = [True, True, True,
+                                            False, False, False,
+                                            True, True, True]
+                agent_norm_filter_list = [True, True, True]
+                opp_norm_filter_list = [True, False, True]
+            elif opp_fainted_list[2]:
+                agent_state_filter_list = [True, True, False,
+                                       True, True, False,
+                                       True, True, False]
+                opp_state_filter_list = [True, True, True,
+                                            True, True, True,
+                                            False, False, False,]
+                agent_norm_filter_list = [True, True, True]
+                opp_norm_filter_list = [True, True, False]
+            else:
+                print("Error: messed up 3v2 state in filter_state_list")
+            # index 0,1 are agent active attacking opp
+            # index 2,3 are party 0 active attacking opp
+            # index 4,5 are party 1 active attacking opp
+            # index 6,7,8 are opp active attacking agent
+            # index 9,10,11 are opp party active attacking agent
+            # index 12, 13, 14 are agent hp normalized
+            # index 15, 16 are opp hp normalized
+        else:
+            print("Error: filter type not recognized")
+        
+        filtered_state_list_agent = self._filter_list_with_bool_list(state_list_agent, agent_state_filter_list)
+        filtered_state_list_opp = self._filter_list_with_bool_list(state_list_opp, opp_state_filter_list)
+        filtered_agent_normalize_hp_list = self._filter_list_with_bool_list(agent_normalize_hp_list, agent_norm_filter_list)
+        filtered_opp_normalize_hp_list = self._filter_list_with_bool_list(opp_normalize_hp_list, opp_norm_filter_list)
+
+        state_key = tuple(filtered_state_list_agent + filtered_state_list_opp 
+                        + filtered_agent_normalize_hp_list + filtered_opp_normalize_hp_list)
+
+        if len(state_key) != expected_len:
+            print(f"Error: state key length is not as expected {filter_type}, {expected_len}, {len(state_key)}")
+        
+        return state_key
+    
+
+    def _filter_list_with_bool_list(self, input_list, filter_list):
+        '''
+        '''
+        new_list = []
+
+        if len(input_list) != len(filter_list):
+            print("Error: input and filter list length not the same")
+            new_list = input_list
+        else:
+            for i in range(len(input_list)):
+                if filter_list[i]:
+                    new_list.append(input_list[i])
+
+        return new_list
