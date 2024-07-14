@@ -1,7 +1,4 @@
 from vgc.behaviour import BattlePolicy, TeamSelectionPolicy, TeamBuildPolicy
-# from vgc.behaviour.BattlePolicies import RandomPlayer, TerminalPlayer
-# from vgc.behaviour.TeamBuildPolicies import TerminalTeamBuilder, RandomTeamBuilder
-# from vgc.behaviour.TeamSelectionPolicies import FirstEditionTeamSelectionPolicy
 from vgc.competition.Competitor import Competitor
 from pequil_bot_battle_policy import PequilBot
 
