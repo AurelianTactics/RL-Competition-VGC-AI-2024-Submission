@@ -1,0 +1,78 @@
+# @package _global_
+
+defaults:
+  - dreamer_v3
+  - override /algo: dreamer_v3_XL #dreamer_v3_XS
+  - override /env: pkm_battle_env_wrapper
+  - _self_
+
+# Experiment
+seed: 5
+total_steps: 10000000
+
+
+
+# Environment
+env:
+  id: pkm_battle_env_wrapper
+  num_envs: 15
+  frame_stack: 1
+  # reward_as_observation: True
+  # wrapper:
+  #   diambra_settings:
+  #     characters: Kasumi
+
+# Checkpoint
+checkpoint:
+  every: 10000 
+  keep_last: 5
+
+metric:
+  log_every: 500 # default is 5000
+
+# Buffer
+buffer:
+  checkpoint: False
+
+# Algorithm
+algo:
+  mlp_keys:
+    encoder:
+      - state
+    decoder:
+      - state
+  learning_starts: 1024 # default is 1024
+  gamma: 0.99
+  horizon: 5
+# algo:
+#   learning_starts: 65536
+#   replay_ratio: 0.125
+#   cnn_keys:
+#     encoder:
+#       - frame
+#   mlp_keys:
+#     encoder:
+#       - own_character
+#       - own_health
+#       - own_side
+#       - own_wins
+#       - opp_character
+#       - opp_health
+#       - opp_side
+#       - opp_wins
+#       - stage
+#       - timer
+#       - action
+#       - reward
+#     decoder:
+#       - own_character
+#       - own_health
+#       - own_side
+#       - own_wins
+#       - opp_character
+#       - opp_health
+#       - opp_side
+#       - opp_wins
+#       - stage
+#       - timer
+#       - action
