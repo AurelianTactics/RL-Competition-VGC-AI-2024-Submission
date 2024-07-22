@@ -5,6 +5,8 @@ https://gitlab.com/DracoStriker/pokemon-vgc-engine/-/wikis/Edition/VGC-AI-Compet
 
 https://2024.ieee-cog.org/competitions/
 
+[Submission Blog Post](https://medium.com/@aureliantactics/vgc-ai-competition-2024-edition-3rd-place-submission-5420d2f6aafe)
+
 # File Structure
 * Loosely organized by methods ideas tried
     * deep_reinforcement_learning for Deep RL attempts
@@ -24,4 +26,4 @@ https://2024.ieee-cog.org/competitions/
 * SheepRL (Dreamer v3) and CleanRL (PPO)
 * Ran on AWS
 
-Blog post: TBD
+
